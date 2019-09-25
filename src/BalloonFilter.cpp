@@ -94,7 +94,7 @@ namespace balloon_filter
         cur_estimate.x.format(short_fmt);
         const auto cur_pos_cov = get_pos_cov(cur_estimate);
         m_pub_chosen_balloon.publish(to_output_message(cur_pos_cov, header));
-        ROS_WARN_STREAM_THROTTLE(MSG_THROTTLE, "[UKF]: Current UKF prediction:" << std::endl << "[\tx\t\ty\t\tz\t\tyaw\t\tspd\t\tcur\t\tqw\t\tqx\t\tqy\t\tqz\t]" << std::endl << "[" << cur_estimate.x.transpose() << "]");
+        ROS_WARN_STREAM_THROTTLE(MSG_THROTTLE, "[UKF]: Current UKF prediction:" << std::endl << "[\tx\t\ty\t\tz\t\tyaw\t\tspd\t\tcur\t]" << std::endl << "[" << cur_estimate.x.transpose() << "]");
       }
     }
   }
@@ -106,28 +106,34 @@ namespace balloon_filter
     // threadsafe copy the data to be fitted with the plane
     const auto [rheiv_pts, rheiv_covs] = get_rheiv_data();
 
+    ros::Time stamp = ros::Time::now();
+    bool success = false;
+    rheiv::theta_t theta;
     if (rheiv_pts.size() > (size_t)m_rheiv_min_pts)
     {
       ros::Time fit_time_start = ros::Time::now();
       // Fitting might throw an exception, so we better try/catch it!
       try
       {
-        rheiv::theta_t theta = fit_plane(rheiv_pts, rheiv_covs);
+        theta = fit_plane(rheiv_pts, rheiv_covs);
         if (abs(plane_angle(-theta, m_rheiv_theta)) < abs(plane_angle(theta, m_rheiv_theta)))
           theta = -theta;
         double angle_diff = plane_angle(theta, m_rheiv_theta);
         
         // If everything went well, save the results and print a nice message
+        success = true;
+        stamp = ros::Time::now();
         {
           std::scoped_lock lck(m_rheiv_theta_mtx);
           m_rheiv_theta_valid = true;
           m_rheiv_theta = theta;
         }
-        ROS_INFO_STREAM_THROTTLE(MSG_THROTTLE, "[RHEIV]: Fitted new plane estimate to " << rheiv_pts.size() << " points in " << (ros::Time::now() - fit_time_start).toSec() << "s (angle diff: " << angle_diff << "):" << std::endl << "[" << theta.transpose() << "]");
+        ROS_INFO_STREAM_THROTTLE(MSG_THROTTLE, "[RHEIV]: Fitted new plane estimate to " << rheiv_pts.size() << " points in " << (stamp - fit_time_start).toSec() << "s (angle diff: " << angle_diff << "):" << std::endl << "[" << theta.transpose() << "]");
       } catch (const mrs_lib::eigenvector_exception& ex)
       {
         // Fitting threw exception, notify the user.
-        ROS_WARN_STREAM_THROTTLE(MSG_THROTTLE, "[RHEIV]: Could not fit plane: '" << ex.what() << "' (took " << (ros::Time::now() - fit_time_start).toSec() << "s).");
+        stamp = ros::Time::now();
+        ROS_WARN_STREAM_THROTTLE(MSG_THROTTLE, "[RHEIV]: Could not fit plane: '" << ex.what() << "' (took " << (stamp - fit_time_start).toSec() << "s).");
       }
     } else
     {
@@ -141,6 +147,14 @@ namespace balloon_filter
       header.frame_id = m_world_frame;
       header.stamp = ros::Time::now();
       m_pub_used_pts.publish(to_output_message(rheiv_pts, header));
+    }
+  
+    if (success)
+    {
+      std_msgs::Header header;
+      header.frame_id = m_world_frame;
+      header.stamp = stamp;
+      m_pub_fitted_plane.publish(to_output_message(theta, header));
     }
     /* // start the fitting process again after the desired delay */
     /* ros::Duration d_remaining = ros::Duration(m_rheiv_fitting_period) - d_cbk; */
@@ -198,7 +212,7 @@ namespace balloon_filter
 
     if (meas_valid)
     {
-      ROS_INFO("[UKF]: Updating current estimate using point [%.2f, %.2f, %.2f]", closest_meas.pos.x(), closest_meas.pos.y(), closest_meas.pos.z());
+      ROS_INFO_THROTTLE(MSG_THROTTLE, "[UKF]: Updating current estimate using point [%.2f, %.2f, %.2f]", closest_meas.pos.x(), closest_meas.pos.y(), closest_meas.pos.z());
       const double dt = (stamp - ukf_last_update).toSec();
       const UKF::u_t u = plane_theta_to_ukf_u(plane_theta);
       const UKF::Q_t Q = dt*m_process_std.asDiagonal();
@@ -541,6 +555,21 @@ namespace balloon_filter
   }
   //}
 
+  /* to_output_message() method //{ */
+  balloon_filter::Plane BalloonFilter::to_output_message(const theta_t& plane_theta, const std_msgs::Header& header)
+  {
+    balloon_filter::Plane ret;
+    ret.header = header;
+    const auto norm = plane_theta.block<3, 1>(0, 0).norm();
+    const auto normal = plane_theta.block<3, 1>(0, 0)/norm;
+    ret.normal.x = normal.x();
+    ret.normal.y = normal.y();
+    ret.normal.z = normal.z();
+    ret.offset = plane_theta(3)/norm;
+    return ret;
+  }
+  //}
+
   /* get_cur_mav_pos() method //{ */
   pos_t BalloonFilter::get_cur_mav_pos()
   {
@@ -794,9 +823,10 @@ void BalloonFilter::onInit()
   m_pub_chosen_balloon = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("filtered_position", 1);
   m_pub_used_meas = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("detection_used", 1);
   m_pub_pred_path = nh.advertise<nav_msgs::Path>("predicted_path", 1);
-  m_pub_plane_dbg = nh.advertise<visualization_msgs::MarkerArray>("fitted_plane", 1);
+  m_pub_plane_dbg = nh.advertise<visualization_msgs::MarkerArray>("fitted_plane_marker", 1);
   m_pub_plane_dbg2 = nh.advertise<geometry_msgs::PoseStamped>("fitted_plane_pose", 1);
   m_pub_used_pts = nh.advertise<sensor_msgs::PointCloud2>("fit_points", 1);
+  m_pub_fitted_plane = nh.advertise<balloon_filter::Plane>("fitted_plane", 1);
 
   //}
 

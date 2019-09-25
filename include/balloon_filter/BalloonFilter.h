@@ -43,6 +43,7 @@
 #include <balloon_filter/eight_rheiv.h>
 #include <balloon_filter/FilterParamsConfig.h>
 #include <balloon_filter/ResetChosen.h>
+#include <balloon_filter/Plane.h>
 #include <object_detect/PoseWithCovarianceArrayStamped.h>
 
 //}
@@ -132,6 +133,7 @@ namespace balloon_filter
       ros::Publisher m_pub_plane_dbg;
       ros::Publisher m_pub_plane_dbg2;
       ros::Publisher m_pub_used_pts;
+      ros::Publisher m_pub_fitted_plane;
 
       ros::ServiceServer m_reset_chosen_server;
 
@@ -229,6 +231,7 @@ namespace balloon_filter
       geometry_msgs::PoseStamped to_output_message2(const theta_t& plane_theta, const std_msgs::Header& header, const pos_t& origin);
       nav_msgs::Path to_output_message(const std::vector<std::pair<UKF::x_t, ros::Time>>& predictions, const std_msgs::Header& header, const theta_t& plane_theta);
       sensor_msgs::PointCloud2 to_output_message(const boost::circular_buffer<pos_t>& points, const std_msgs::Header& header);
+      balloon_filter::Plane to_output_message(const theta_t& plane_theta, const std_msgs::Header& header);
       pos_t get_cur_mav_pos();
       bool find_closest_to(const std::vector<pos_cov_t>& measurements, const pos_t& to_position, pos_cov_t& closest_out, bool use_gating = false);
       bool find_closest(const std::vector<pos_cov_t>& measurements, pos_cov_t& closest_out);

@@ -11,7 +11,8 @@ set(CMAKE_CXX_FLAGS_RELEASE "-std=c++17 -Wall -O0 -g -fvar-tracking -fvar-tracki
 find_package(catkin REQUIRED COMPONENTS
   roscpp
   dynamic_reconfigure
-  mrs_msgs
+  std_msgs
+  geometry_msgs
   mrs_lib
   pcl_ros
   message_generation
@@ -31,10 +32,17 @@ add_service_files(
    ResetChosen.srv
  )
 
+#Generate messages in the 'msg' folder
+add_message_files(
+   FILES
+   Plane.msg
+ )
+
 ## Generate added messages and services with any dependencies listed here
  generate_messages(
    DEPENDENCIES
    std_msgs
+   geometry_msgs
  )
 
 catkin_package(
