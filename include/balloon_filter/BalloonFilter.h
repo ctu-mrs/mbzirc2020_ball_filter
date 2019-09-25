@@ -41,7 +41,7 @@
 // local includes
 #include <balloon_filter/eight_ukf.h>
 #include <balloon_filter/eight_rheiv.h>
-#include <balloon_filter/PlanningParamsConfig.h>
+#include <balloon_filter/FilterParamsConfig.h>
 #include <balloon_filter/ResetChosen.h>
 #include <object_detect/PoseWithCovarianceArrayStamped.h>
 
@@ -52,7 +52,7 @@
 namespace balloon_filter
 {
   // shortcut type to the dynamic reconfigure manager template instance
-  using drcfg_t = balloon_filter::PlanningParamsConfig;
+  using drcfg_t = balloon_filter::FilterParamsConfig;
   using drmgr_t = mrs_lib::DynamicReconfigureMgr<drcfg_t>;
 
   using detections_t = object_detect::PoseWithCovarianceArrayStamped;

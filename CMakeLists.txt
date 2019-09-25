@@ -22,7 +22,7 @@ find_package(catkin REQUIRED COMPONENTS
 find_package(Eigen3 REQUIRED)
 
 generate_dynamic_reconfigure_options(
-  config/TrackingParams.cfg
+  config/FilterParams.cfg
   )
 
 #Generate services in the 'srv' folder
@@ -39,7 +39,7 @@ add_service_files(
 
 catkin_package(
   INCLUDE_DIRS include
-  LIBRARIES BalloonTracker
+  LIBRARIES BalloonFilter
   CATKIN_DEPENDS
   #  DEPENDS system_lib
   )
