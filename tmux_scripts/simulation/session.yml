@@ -53,7 +53,7 @@ windows:
       panes:
         - '
           waitForControl;
-          roslaunch balloon_planner generate_eight.launch;
+          roslaunch balloon_filter generate_eight.launch;
           roslaunch trajectory_loader multimaster_trajectories_loader.launch loop:=true;
           history -s roslaunch trajectory_loader multimaster_start_following.launch;
           '
@@ -61,15 +61,3 @@ windows:
       layout: even-vertical
       panes:
         - waitForControl; roslaunch object_detect object_detect.launch
-  # - balloon_planner:
-  #     layout: even-vertical
-  #     panes:
-        # - waitForRos; roslaunch balloon_planner sim_plan.launch
-  # - compressed_republish:
-  #     layout: even-vertical
-  #     panes:
-  #       - waitForControl; rosrun image_transport republish raw in:=/uav1/balloon_detect/debug_image compressed out:=/uav1/balloon_detect/debug_image
-  # - fake_screen:
-  #     layout: even-vertical
-  #     panes:
-  #       - ~/git/linux-setup/scripts/fake_screen.sh

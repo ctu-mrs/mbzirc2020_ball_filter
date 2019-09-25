@@ -1,5 +1,5 @@
-#ifndef BALLOONPLANNER_H
-#define BALLOONPLANNER_H
+#ifndef BALLOONFILTER_H
+#define BALLOONFILTER_H
 
 /* includes //{ */
 
@@ -39,20 +39,20 @@
 #include <mutex>
 
 // local includes
-#include <balloon_planner/eight_ukf.h>
-#include <balloon_planner/eight_rheiv.h>
-#include <balloon_planner/PlanningParamsConfig.h>
-#include <balloon_planner/ResetChosen.h>
+#include <balloon_filter/eight_ukf.h>
+#include <balloon_filter/eight_rheiv.h>
+#include <balloon_filter/PlanningParamsConfig.h>
+#include <balloon_filter/ResetChosen.h>
 #include <object_detect/PoseWithCovarianceArrayStamped.h>
 
 //}
 
 #define MSG_THROTTLE 0.5
 
-namespace balloon_planner
+namespace balloon_filter
 {
   // shortcut type to the dynamic reconfigure manager template instance
-  using drcfg_t = balloon_planner::PlanningParamsConfig;
+  using drcfg_t = balloon_filter::PlanningParamsConfig;
   using drmgr_t = mrs_lib::DynamicReconfigureMgr<drcfg_t>;
 
   using detections_t = object_detect::PoseWithCovarianceArrayStamped;
@@ -72,12 +72,12 @@ namespace balloon_planner
     cov_t cov;
   };
 
-  /* //{ class BalloonPlanner */
+  /* //{ class BalloonFilter */
 
-  class BalloonPlanner : public nodelet::Nodelet
+  class BalloonFilter : public nodelet::Nodelet
   {
     public:
-      BalloonPlanner() : m_node_name("BalloonPlanner") {};
+      BalloonFilter() : m_node_name("BalloonFilter") {};
       virtual void onInit();
 
       bool m_is_initialized;
@@ -235,13 +235,13 @@ namespace balloon_planner
 
       std::vector<pos_cov_t> message_to_positions(const detections_t& balloon_msg);
 
-      bool reset_chosen_callback(balloon_planner::ResetChosen::Request& req, balloon_planner::ResetChosen::Response& resp);
+      bool reset_chosen_callback(balloon_filter::ResetChosen::Request& req, balloon_filter::ResetChosen::Response& resp);
       void load_dynparams(drcfg_t cfg);
 
   };
   
   //}
 
-}  // namespace balloon_planner
+}  // namespace balloon_filer
 
 #endif

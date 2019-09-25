@@ -1,5 +1,0 @@
-<library path="lib/libBalloonPlanner">
-  <class name="balloon_planner/BalloonPlanner" type="balloon_planner::BalloonPlanner" base_class_type="nodelet::Nodelet">
-    <description>The balloon_planner nodelet</description>
-  </class>
-</library>

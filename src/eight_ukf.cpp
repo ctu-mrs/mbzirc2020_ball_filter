@@ -1,8 +1,8 @@
-#include <balloon_planner/eight_ukf.h>
+#include <balloon_filter/eight_ukf.h>
 
-template class mrs_lib::UKF<balloon_planner::ukf::n_states, balloon_planner::ukf::n_inputs, balloon_planner::ukf::n_measurements>;
+template class mrs_lib::UKF<balloon_filter::ukf::n_states, balloon_filter::ukf::n_inputs, balloon_filter::ukf::n_measurements>;
 
-namespace balloon_planner
+namespace balloon_filter
 {
   namespace ukf
   {
@@ -86,12 +86,6 @@ namespace balloon_planner
     {
       UKF::x_t out = in;
       out(x_yaw) = normalize_angle(in(x_yaw));
-      // TODO: normalize the quaternion as well?
-      /* const Quat quat = Quat(in(x_qw), in(x_qx), in(x_qy), in(x_qz)).normalized(); */
-      /* out(x_qw) = quat.w(); */
-      /* out(x_qx) = quat.x(); */
-      /* out(x_qy) = quat.y(); */
-      /* out(x_qz) = quat.z(); */
       return out;
     }
   }
@@ -103,8 +97,8 @@ namespace balloon_planner
 #include <fstream>
 #include <random>
 
-using namespace balloon_planner;
-using namespace balloon_planner::ukf;
+using namespace balloon_filter;
+using namespace balloon_filter::ukf;
 
 /* load_csv() function //{ */
 // from https://stackoverflow.com/questions/34247057/how-to-read-csv-file-and-assign-to-eigen-matrix

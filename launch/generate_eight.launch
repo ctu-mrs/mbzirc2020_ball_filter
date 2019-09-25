@@ -4,11 +4,11 @@
 
   <group ns="$(arg uav_name)">
 
-    <node pkg="balloon_planner" type="eight_generator.py" name="eight_generator" output="screen" >
+    <node pkg="balloon_filter" type="eight_generator.py" name="eight_generator" output="screen" >
 
-      <rosparam file="$(find balloon_planner)/config/trajectory_gen.yaml" command="load" />
+      <rosparam file="$(find balloon_filter)/config/trajectory_gen.yaml" command="load" />
 
-      <param name="output_file" type="string" value="$(find balloon_planner)/data/eight_traj.csv" />
+      <param name="output_file" type="string" value="$(find balloon_filter)/data/eight_traj.csv" />
 
     </node>
 

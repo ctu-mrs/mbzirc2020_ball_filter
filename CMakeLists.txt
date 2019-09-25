@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8.3)
-project(balloon_planner)
+project(balloon_filter)
 
 set(CMAKE_CXX_FLAGS "-std=c++17 -Wall -O0 -g -fvar-tracking -fvar-tracking-assignments -DEIGEN_INITIALIZE_MATRICES_BY_NAN")
 set(CMAKE_CXX_FLAGS_DEBUG "-std=c++17 -Wall -O0 -g -fvar-tracking -fvar-tracking-assignments -DEIGEN_INITIALIZE_MATRICES_BY_NAN")
@@ -22,7 +22,7 @@ find_package(catkin REQUIRED COMPONENTS
 find_package(Eigen3 REQUIRED)
 
 generate_dynamic_reconfigure_options(
-  config/PlanningParams.cfg
+  config/TrackingParams.cfg
   )
 
 #Generate services in the 'srv' folder
@@ -39,7 +39,7 @@ add_service_files(
 
 catkin_package(
   INCLUDE_DIRS include
-  LIBRARIES BalloonPlanner
+  LIBRARIES BalloonTracker
   CATKIN_DEPENDS
   #  DEPENDS system_lib
   )
@@ -58,16 +58,16 @@ include_directories(
   )
 
 ## Declare a C++ executable
-add_library(BalloonPlanner
+add_library(BalloonFilter
   src/eight_ukf.cpp
   src/eight_rheiv.cpp
-  src/BalloonPlanner.cpp
+  src/BalloonFilter.cpp
   )
-add_dependencies(BalloonPlanner
+add_dependencies(BalloonFilter
   ${${PROJECT_NAME}_EXPORTED_TARGETS}
   ${catkin_EXPORTED_TARGETS})
 ## Specify libraries to link a library or executable target against
-target_link_libraries(BalloonPlanner
+target_link_libraries(BalloonFilter
   ${catkin_LIBRARIES}
   )
 

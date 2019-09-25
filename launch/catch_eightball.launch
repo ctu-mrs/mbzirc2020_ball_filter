@@ -8,15 +8,15 @@
   <arg     if="$(arg debug)" name="launch_prefix" value="debug_roslaunch"/>
 
   <group if="$(arg print_debug)">
-  <env name="ROSCONSOLE_CONFIG_FILE" value="$(find balloon_planner)/config/rosconsole/debug.conf"/>
+  <env name="ROSCONSOLE_CONFIG_FILE" value="$(find balloon_filter)/config/rosconsole/debug.conf"/>
 </group>
   <group ns="$(arg uav_name)">
 
-    <node pkg="nodelet" type="nodelet" name="balloon_planner" args="standalone balloon_planner/BalloonPlanner" output="screen" launch-prefix="$(arg launch_prefix)" >
+    <node pkg="nodelet" type="nodelet" name="balloon_filter" args="standalone balloon_filter/BalloonFilter" output="screen" launch-prefix="$(arg launch_prefix)" >
 
       <param name="uav_name" type="string" value="$(arg uav_name)" />
       <param name="uav_frame_id" type="string" value="fcu_$(arg uav_name)" />
-      <rosparam file="$(find balloon_planner)/config/plan_params.yaml" command="load" />
+      <rosparam file="$(find balloon_filter)/config/filter_params.yaml" command="load" />
 
       <!-- Subscribers -->
       <remap from="~balloon_detections" to="object_detect/detected_objects" />

@@ -1,6 +1,6 @@
 #include <mrs_lib/ukf.h>
 
-namespace balloon_planner
+namespace balloon_filter
 {
   namespace ukf
   {

@@ -1,11 +1,11 @@
 <?xml version="1.0"?>
 <package>
 
-  <name>balloon_planner</name>
+  <name>balloon_filter</name>
   <version>1.0.0</version>
-  <description>The balloon_planner package</description>
+  <description>The balloon_filter package</description>
 
-  <maintainer email="matej.petrlik@fel.cvut.cz">Matej Petrlik</maintainer>
+  <maintainer email="vrbamato@fel.cvut.cz">Matouš Vrba</maintainer>
 
   <license>TODO</license>
 
@@ -32,7 +32,7 @@
   <run_depend>nodelet</run_depend>
 
   <export>
-    <nodelet plugin="${prefix}/balloon_planner.xml" />
+    <nodelet plugin="${prefix}/balloon_filter.xml" />
   </export>
 
 </package>
