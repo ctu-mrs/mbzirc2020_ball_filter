@@ -24,7 +24,7 @@
   <build_depend>message_generation</build_depend>
 
   <export>
-    <nodelet plugin="${prefix}/balloon_fitter.xml" />
+    <nodelet plugin="${prefix}/balloon_filter.xml" />
   </export>
 
 </package>
