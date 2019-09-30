@@ -13,6 +13,7 @@ find_package(catkin REQUIRED COMPONENTS
   dynamic_reconfigure
   std_msgs
   geometry_msgs
+  nav_msgs
   mrs_lib
   pcl_ros
   message_generation
@@ -36,6 +37,10 @@ add_service_files(
 add_message_files(
    FILES
    Plane.msg
+   UKFState.msg
+   FilterState.msg
+   BallPrediction.msg
+   PlaneStamped.msg
  )
 
 ## Generate added messages and services with any dependencies listed here
@@ -43,6 +48,7 @@ add_message_files(
    DEPENDENCIES
    std_msgs
    geometry_msgs
+   nav_msgs
  )
 
 catkin_package(

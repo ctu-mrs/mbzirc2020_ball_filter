@@ -44,6 +44,9 @@
 #include <balloon_filter/FilterParamsConfig.h>
 #include <balloon_filter/ResetChosen.h>
 #include <balloon_filter/Plane.h>
+#include <balloon_filter/UKFState.h>
+#include <balloon_filter/BallPrediction.h>
+#include <balloon_filter/PlaneStamped.h>
 #include <object_detect/PoseWithCovarianceArrayStamped.h>
 
 //}
@@ -129,7 +132,8 @@ namespace balloon_filter
 
       ros::Publisher m_pub_chosen_balloon;
       ros::Publisher m_pub_used_meas;
-      ros::Publisher m_pub_pred_path;
+      ros::Publisher m_pub_ball_prediction;
+      ros::Publisher m_pub_pred_path_dbg;
       ros::Publisher m_pub_plane_dbg;
       ros::Publisher m_pub_plane_dbg2;
       ros::Publisher m_pub_used_pts;
@@ -226,12 +230,16 @@ namespace balloon_filter
 
       pos_t get_pos(const UKF::x_t& x);
       pos_cov_t get_pos_cov(const UKF::statecov_t& statecov);
+
       geometry_msgs::PoseWithCovarianceStamped to_output_message(const pos_cov_t& estimate, const std_msgs::Header& header);
       visualization_msgs::MarkerArray to_output_message(const theta_t& plane_theta, const std_msgs::Header& header, const pos_t& origin);
       geometry_msgs::PoseStamped to_output_message2(const theta_t& plane_theta, const std_msgs::Header& header, const pos_t& origin);
       nav_msgs::Path to_output_message(const std::vector<std::pair<UKF::x_t, ros::Time>>& predictions, const std_msgs::Header& header, const theta_t& plane_theta);
       sensor_msgs::PointCloud2 to_output_message(const boost::circular_buffer<pos_t>& points, const std_msgs::Header& header);
-      balloon_filter::Plane to_output_message(const theta_t& plane_theta, const std_msgs::Header& header);
+      balloon_filter::PlaneStamped to_output_message(const theta_t& plane_theta, const std_msgs::Header& header);
+      balloon_filter::UKFState to_output_message(const UKF::statecov_t& ukf_statecov);
+      balloon_filter::Plane to_output_message(const rheiv::theta_t& plane_theta);
+
       pos_t get_cur_mav_pos();
       bool find_closest_to(const std::vector<pos_cov_t>& measurements, const pos_t& to_position, pos_cov_t& closest_out, bool use_gating = false);
       bool find_closest(const std::vector<pos_cov_t>& measurements, pos_cov_t& closest_out);
