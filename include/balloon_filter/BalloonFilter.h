@@ -152,22 +152,24 @@ namespace balloon_filter
       std::mutex m_rheiv_data_mtx;
       boost::circular_buffer<pos_t> m_rheiv_pts;
       boost::circular_buffer<cov_t> m_rheiv_covs;
+      boost::circular_buffer<ros::Time> m_rheiv_stamps;
       ros::Time m_rheiv_last_data_update;
       bool m_rheiv_new_data;
-      void add_rheiv_data(const pos_t& pos, const cov_t& cov)
+      void add_rheiv_data(const pos_t& pos, const cov_t& cov, const ros::Time& stamp)
       {
         std::scoped_lock lck(m_rheiv_data_mtx);
         m_rheiv_pts.push_back(pos);
         m_rheiv_covs.push_back(cov);
+        m_rheiv_stamps.push_back(stamp);
         m_rheiv_last_data_update = ros::Time::now();
         m_rheiv_new_data = true;
       };
-      std::tuple<boost::circular_buffer<pos_t>, boost::circular_buffer<cov_t>, bool, ros::Time> get_rheiv_data()
+      std::tuple<boost::circular_buffer<pos_t>, boost::circular_buffer<cov_t>, boost::circular_buffer<ros::Time>, bool, ros::Time> get_rheiv_data()
       {
         std::scoped_lock lck(m_rheiv_data_mtx);
         const bool got_new_data = m_rheiv_new_data;
         m_rheiv_new_data = false;
-        return {m_rheiv_pts, m_rheiv_covs, got_new_data, m_rheiv_last_data_update};
+        return {m_rheiv_pts, m_rheiv_covs, m_rheiv_stamps, got_new_data, m_rheiv_last_data_update};
       };
 
       std::mutex m_rheiv_theta_mtx;
@@ -227,7 +229,7 @@ namespace balloon_filter
       /* UKF related methods //{ */
       UKF::statecov_t predict_ukf_estimate(const ros::Time& to_stamp, const theta_t& plane_theta);
       bool update_ukf_estimate(const std::vector<pos_cov_t>& measurements, const ros::Time& stamp, pos_cov_t& used_meas, const theta_t& plane_theta);
-      bool init_ukf_estimate(const std::vector<pos_cov_t>& measurements, const ros::Time& stamp, pos_cov_t& used_meas);
+      bool init_ukf_estimate(const ros::Time& stamp, pos_cov_t& used_meas);
       std::vector<std::pair<UKF::x_t, ros::Time>> predict_states(const UKF::statecov_t initial_statecov, const ros::Time& initial_timestamp, const theta_t& plane_theta, const double prediction_horizon, const double prediction_step);
       //}
 

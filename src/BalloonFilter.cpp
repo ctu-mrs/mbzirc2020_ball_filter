@@ -20,7 +20,7 @@ namespace balloon_filter
         std::vector<pos_cov_t> measurements = message_to_positions(balloons);
 
         for (const auto& meas : measurements)
-          add_rheiv_data(meas.pos, meas.cov);
+          add_rheiv_data(meas.pos, meas.cov, balloons.header.stamp);
 
         // copy the latest plane fit
         const auto [plane_theta_valid, plane_theta] = get_rheiv_status();
@@ -45,7 +45,7 @@ namespace balloon_filter
           if (m_ukf_estimate_exists)
             used_meas_valid = update_ukf_estimate(measurements, balloons.header.stamp, used_meas, plane_theta);
           else
-            used_meas_valid = init_ukf_estimate(measurements, balloons.header.stamp, used_meas);
+            used_meas_valid = init_ukf_estimate(balloons.header.stamp, used_meas);
 
           if (used_meas_valid)
           {
@@ -106,7 +106,7 @@ namespace balloon_filter
   void BalloonFilter::rheiv_loop([[maybe_unused]] const ros::TimerEvent& evt)
   {
     // threadsafe copy the data to be fitted with the plane
-    const auto [rheiv_pts, rheiv_covs, rheiv_new_data, rheiv_last_data_update] = get_rheiv_data();
+    const auto [rheiv_pts, rheiv_covs, rheiv_stamps, rheiv_new_data, rheiv_last_data_update] = get_rheiv_data();
 
     if ((ros::Time::now() - rheiv_last_data_update).toSec() >= m_max_time_since_update)
     {
@@ -266,33 +266,44 @@ namespace balloon_filter
   }
   //}
 
-  /* init_ukf_estimate() method //{ */
-  bool BalloonFilter::init_ukf_estimate(const std::vector<pos_cov_t>& measurements, const ros::Time& stamp, pos_cov_t& used_meas)
+  std::tuple<pos_t, cov_t, double, double, double> estimate_ukf_initial_states()
   {
-    pos_cov_t closest_meas;
-    bool meas_valid = find_closest(measurements, closest_meas);
-    if (meas_valid)
+    
+  }
+
+  /* init_ukf_estimate() method //{ */
+  bool BalloonFilter::init_ukf_estimate(const ros::Time& stamp, pos_cov_t& used_meas)
+  {
+    /* pos_cov_t closest_meas; */
+    /* bool meas_valid = find_closest(measurements, closest_meas); */
+    const auto [init_pt, init_cov, init_spd, init_yaw, init_cur] = estimate_ukf_initial_states();
+    /* if (meas_valid) */
     {
-      ROS_INFO("[UKF]: Initializing estimate using point [%.2f, %.2f, %.2f]", closest_meas.pos.x(), closest_meas.pos.y(), closest_meas.pos.z());
+      ROS_INFO("[UKF]: Initializing estimate using point [%.2f, %.2f, %.2f], speed %.2f, yaw %.2f and curvature %.2f", init_pt.x(), init_pt.y(), init_pt.z(), init_spd, init_yaw, init_cur);
 
       {
         std::scoped_lock lck(m_ukf_estimate_mtx);
 
         m_ukf_estimate.x = UKF::x_t::Zero();
-        m_ukf_estimate.x.block<3, 1>(0, 0) = closest_meas.pos;
+        m_ukf_estimate.x.block<3, 1>(0, 0) = init_pt;
+        m_ukf_estimate.x(ukf::x_yaw) = init_yaw;
+        m_ukf_estimate.x(ukf::x_s) = init_spd;
+        m_ukf_estimate.x(ukf::x_c) = init_cur;
 
         m_ukf_estimate.P = m_init_std.asDiagonal();
-        m_ukf_estimate.P.block<3, 3>(0, 0) = closest_meas.cov;
+        m_ukf_estimate.P.block<3, 3>(0, 0) = init_cov;
         m_ukf_estimate_exists = true;
         m_ukf_last_update = stamp;
         m_ukf_n_updates = 1;
       }
-      used_meas = closest_meas;
-    } else
-    {
-      ROS_INFO("[UKF]: No point is valid for estimate initialization");
+      used_meas = {init_pt, init_cov};
     }
-    return meas_valid;
+    /* else */
+    /* { */
+    /*   ROS_INFO("[UKF]: No point is valid for estimate initialization"); */
+    /* } */
+    /* return meas_valid; */
+    return true;
   }
   //}
 
@@ -314,6 +325,7 @@ namespace balloon_filter
     std::scoped_lock lck(m_rheiv_data_mtx);
     m_rheiv_pts.clear();
     m_rheiv_covs.clear();
+    m_rheiv_stamps.clear();
     m_rheiv_new_data = false;
     m_rheiv_last_data_update = ros::Time::now();
 

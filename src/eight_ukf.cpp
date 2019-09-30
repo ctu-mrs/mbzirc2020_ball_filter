@@ -49,7 +49,6 @@ namespace balloon_filter
       const double n_speed = speed; // assume constant speed
       const double n_yaw = yaw + speed*curv*dt;
       const double n_curv = curv;
-      const Quat n_quat = quat; // does not change
 
       // Copy the calculated values to the respective states
       out(x_x) = n_pos_world.x();
