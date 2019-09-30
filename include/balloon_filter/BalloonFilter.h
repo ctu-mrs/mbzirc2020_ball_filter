@@ -42,7 +42,7 @@
 #include <balloon_filter/eight_ukf.h>
 #include <balloon_filter/eight_rheiv.h>
 #include <balloon_filter/FilterParamsConfig.h>
-#include <balloon_filter/ResetChosen.h>
+#include <balloon_filter/ResetEstimates.h>
 #include <balloon_filter/Plane.h>
 #include <balloon_filter/UKFState.h>
 #include <balloon_filter/BallPrediction.h>
@@ -139,7 +139,7 @@ namespace balloon_filter
       ros::Publisher m_pub_used_pts;
       ros::Publisher m_pub_fitted_plane;
 
-      ros::ServiceServer m_reset_chosen_server;
+      ros::ServiceServer m_reset_estimates_server;
 
       ros::Timer m_main_loop_timer;
       ros::Timer m_rheiv_loop_timer;
@@ -149,19 +149,25 @@ namespace balloon_filter
       // | ----------------- RHEIV related variables ---------------- |
 
       RHEIV m_rheiv;
-      std::mutex m_rheiv_pts_covs_mtx;
+      std::mutex m_rheiv_data_mtx;
       boost::circular_buffer<pos_t> m_rheiv_pts;
       boost::circular_buffer<cov_t> m_rheiv_covs;
+      ros::Time m_rheiv_last_data_update;
+      bool m_rheiv_new_data;
       void add_rheiv_data(const pos_t& pos, const cov_t& cov)
       {
-        std::scoped_lock lck(m_rheiv_pts_covs_mtx);
+        std::scoped_lock lck(m_rheiv_data_mtx);
         m_rheiv_pts.push_back(pos);
         m_rheiv_covs.push_back(cov);
+        m_rheiv_last_data_update = ros::Time::now();
+        m_rheiv_new_data = true;
       };
-      std::tuple<boost::circular_buffer<pos_t>, boost::circular_buffer<cov_t>> get_rheiv_data()
+      std::tuple<boost::circular_buffer<pos_t>, boost::circular_buffer<cov_t>, bool, ros::Time> get_rheiv_data()
       {
-        std::scoped_lock lck(m_rheiv_pts_covs_mtx);
-        return {m_rheiv_pts, m_rheiv_covs};
+        std::scoped_lock lck(m_rheiv_data_mtx);
+        const bool got_new_data = m_rheiv_new_data;
+        m_rheiv_new_data = false;
+        return {m_rheiv_pts, m_rheiv_covs, got_new_data, m_rheiv_last_data_update};
       };
 
       std::mutex m_rheiv_theta_mtx;
@@ -222,7 +228,6 @@ namespace balloon_filter
       UKF::statecov_t predict_ukf_estimate(const ros::Time& to_stamp, const theta_t& plane_theta);
       bool update_ukf_estimate(const std::vector<pos_cov_t>& measurements, const ros::Time& stamp, pos_cov_t& used_meas, const theta_t& plane_theta);
       bool init_ukf_estimate(const std::vector<pos_cov_t>& measurements, const ros::Time& stamp, pos_cov_t& used_meas);
-      void reset_ukf_estimate();
       std::vector<std::pair<UKF::x_t, ros::Time>> predict_states(const UKF::statecov_t initial_statecov, const ros::Time& initial_timestamp, const theta_t& plane_theta, const double prediction_horizon, const double prediction_step);
       //}
 
@@ -246,7 +251,10 @@ namespace balloon_filter
 
       std::vector<pos_cov_t> message_to_positions(const detections_t& balloon_msg);
 
-      bool reset_chosen_callback(balloon_filter::ResetChosen::Request& req, balloon_filter::ResetChosen::Response& resp);
+      void reset_estimates();
+      void reset_ukf_estimate();
+      void reset_rheiv_estimate();
+      bool reset_estimates_callback([[maybe_unused]] balloon_filter::ResetEstimates::Request& req, balloon_filter::ResetEstimates::Response& resp);
       void load_dynparams(drcfg_t cfg);
 
   };

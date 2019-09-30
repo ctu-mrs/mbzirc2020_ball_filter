@@ -13,5 +13,5 @@ sampling:
   speed:  1.5 # metres per second
   dt:     0.2 # seconds
 
-plot_result: true # whether to plot the resulting trajectory using matplotlib
+plot_result: false # whether to plot the resulting trajectory using matplotlib
 save_header: false # whether to save the column names on the first row of the csv file (to make it more human-readable)

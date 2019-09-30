@@ -106,7 +106,16 @@ namespace balloon_filter
   void BalloonFilter::rheiv_loop([[maybe_unused]] const ros::TimerEvent& evt)
   {
     // threadsafe copy the data to be fitted with the plane
-    const auto [rheiv_pts, rheiv_covs] = get_rheiv_data();
+    const auto [rheiv_pts, rheiv_covs, rheiv_new_data, rheiv_last_data_update] = get_rheiv_data();
+
+    if ((ros::Time::now() - rheiv_last_data_update).toSec() >= m_max_time_since_update)
+    {
+      reset_rheiv_estimate();
+      return;
+    }
+
+    if (!rheiv_new_data)
+      return;
 
     ros::Time stamp = ros::Time::now();
     bool success = false;
@@ -290,10 +299,33 @@ namespace balloon_filter
   /* reset_ukf_estimate() method //{ */
   void BalloonFilter::reset_ukf_estimate()
   {
+    std::scoped_lock lck(m_ukf_estimate_mtx);
     m_ukf_estimate_exists = false;
     m_ukf_last_update = ros::Time::now();
     m_ukf_n_updates = 0;
-    ROS_INFO("[%s]: Current chosen balloon ==RESET==.", m_node_name.c_str());
+
+    ROS_WARN("[%s]: UKF estimate ==RESET==.", m_node_name.c_str());
+  }
+  //}
+
+  /* reset_rheiv_estimate() method //{ */
+  void BalloonFilter::reset_rheiv_estimate()
+  {
+    std::scoped_lock lck(m_rheiv_data_mtx);
+    m_rheiv_pts.clear();
+    m_rheiv_covs.clear();
+    m_rheiv_new_data = false;
+    m_rheiv_last_data_update = ros::Time::now();
+
+    ROS_WARN("[%s]: RHEIV estimate ==RESET==.", m_node_name.c_str());
+  }
+  //}
+
+  /* reset_estimates() method //{ */
+  void BalloonFilter::reset_estimates()
+  {
+    reset_ukf_estimate();
+    reset_rheiv_estimate();
   }
   //}
 
@@ -873,7 +905,7 @@ namespace balloon_filter
     constexpr bool time_consistent = true;
     m_sh_balloons = smgr.create_handler<detections_t, time_consistent>("balloon_detections", ros::Duration(5.0));
 
-    m_reset_chosen_server = nh.advertiseService("reset_chosen", &BalloonFilter::reset_chosen_callback, this);
+    m_reset_estimates_server = nh.advertiseService("reset_estimates", &BalloonFilter::reset_estimates_callback, this);
     //}
 
     /* publishers //{ */
@@ -910,7 +942,7 @@ namespace balloon_filter
       m_rheiv_theta_valid = false;
     }
 
-    reset_ukf_estimate();
+    reset_estimates();
     m_is_initialized = true;
 
     /* timers  //{ */
@@ -926,12 +958,12 @@ namespace balloon_filter
 
   //}
 
-  /* BalloonFilter::reset_chosen_callback() method //{ */
+  /* BalloonFilter::reset_estimates_callback() method //{ */
 
-  bool BalloonFilter::reset_chosen_callback(balloon_filter::ResetChosen::Request& req, balloon_filter::ResetChosen::Response& resp)
+  bool BalloonFilter::reset_estimates_callback([[maybe_unused]] balloon_filter::ResetEstimates::Request& req, balloon_filter::ResetEstimates::Response& resp)
   {
-    reset_ukf_estimate();
-    resp.message = "Current chosen balloon was reset.";
+    reset_estimates();
+    resp.message = "Current estimate was reset.";
     resp.success = true;
     return true;
   }
