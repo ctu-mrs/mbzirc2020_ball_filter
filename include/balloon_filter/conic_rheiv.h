@@ -22,16 +22,19 @@ namespace balloon_filter
     RHEIV_conic::dzdx_t f_dzdx_f(const RHEIV_conic::x_t& x);
 
     // indices of the state interpretations
-    // the state represents conic parameters a*x^2 + b*x*y + c*y^2 + d*x + e*y + f = 0
-    enum
+    // the state represents conic parameters A*x^2 + B*x*y + C*y^2 + D*x + E*y + F = 0
+    namespace theta
     {
-      x_a = 0,
-      x_b,
-      x_c,
-      x_d,
-      x_e,
-      x_f,
-    };
+      enum
+      {
+        A = 0,
+        B,
+        C,
+        D,
+        E,
+        F,
+      };
+    }
   }
 }
 

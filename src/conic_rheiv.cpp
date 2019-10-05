@@ -84,7 +84,8 @@ M load_csv(const std::string& path, const char delim = ',', bool skip_header = f
     }
     rows++;
   }
-  return Eigen::Map<const Eigen::Matrix<typename M::Scalar, M::RowsAtCompileTime, M::ColsAtCompileTime, Eigen::RowMajor>>(values.data(), rows, values.size()/rows);
+  M ret = Eigen::Map<const Eigen::Matrix<typename M::Scalar, M::RowsAtCompileTime, M::ColsAtCompileTime, Eigen::RowMajor>>(values.data(), rows, values.size()/rows);
+  return ret;
 }
 //}
 
@@ -134,6 +135,20 @@ double theta_diff(const theta_t& th1, const theta_t& th2)
   return std::min( (th1n-th2n).norm(), (th1n+th2n).norm() );
 }
 
+/* Eigen::Matrix3d conic_matrix(const theta_t& conic_params) */
+/* { */
+/*   const double& A = conic_params(theta::A); */
+/*   const double& B = conic_params(theta::B); */
+/*   const double& C = conic_params(theta::C); */
+/*   const double& D = conic_params(theta::D); */
+/*   const double& E = conic_params(theta::E); */
+/*   const double& F = conic_params(theta::F); */
+/*   return (Eigen::Matrix3d() << */
+/*     A, B/2, D/2, */
+/*     B/2, C, E/2, */
+/*     D/2, E/2, F).finalized(); */
+/* } */
+
 /* main() function for testing //{ */
 int main()
 {
@@ -150,12 +165,15 @@ int main()
     exit(1);
   }
   std::cout << "Loaded " << n_pts << " points" << std::endl;
-  const theta_t theta_gt = load_csv<Eigen::MatrixXd>(conic_fname, delim, false).transpose().normalized();
+  const auto gt = load_csv<Eigen::MatrixXd>(conic_fname, delim, false);
+  std::cout << "Loaded gt: " << gt << std::endl;
+  const theta_t theta_gt = gt.block<theta_t::ColsAtCompileTime, theta_t::RowsAtCompileTime>(0, 0).transpose().normalized();
+  std::cout << "theta gt: " << theta_gt.transpose() << std::endl;
 
   const f_z_t f_z(f_z_f);
   const f_dzdx_t f_dzdx(f_dzdx_f);
 
-  RHEIV_conic rheiv(f_z, f_dzdx, 1e-15, 1e4);
+  RHEIV_conic rheiv(f_z, f_dzdx, 1e-9, 1e4);
 
   xs_t gts = pts.transpose().block(0, 0, n_states, n_pts);
   xs_t xs(n_states, n_pts);
@@ -164,7 +182,7 @@ int main()
   {
     const auto cur_pt = pts.block<1, n_states>(it, 0).transpose();
     const P_t tmp = P_t::Random();
-    const P_t P = 5*tmp*tmp.transpose();
+    const P_t P = 0.1*tmp*tmp.transpose();
     const x_t cur_x = cur_pt + normal_randvec(P);
     xs.block(0, it, n_states, 1) = cur_x;
     Ps.at(it) = 0.1*P;
@@ -214,6 +232,51 @@ int main()
   std::cout << "avg. error (ALS):    " << avg_err_ALS << "m" << std::endl;
   std::cout << "avg. error (ALS, gt):" << avg_err_ALS_gt << "m" << std::endl;
   std::cout << "avg. error (gt):     " << avg_err_gt << "m" << std::endl;
+
+  [[maybe_unused]] const double A = theta_AML(theta::A);
+  [[maybe_unused]] const double B = theta_AML(theta::B);
+  [[maybe_unused]] const double C = theta_AML(theta::C);
+  [[maybe_unused]] const double D = theta_AML(theta::D);
+  [[maybe_unused]] const double E = theta_AML(theta::E);
+  [[maybe_unused]] const double F = theta_AML(theta::F);
+  const double discriminant = B*B - 4*A*C;
+
+  if (discriminant < 0)
+    std::cout << "The resulting conic section is an ellipsoid";
+  if (discriminant == 0)
+    std::cout << "The resulting conic section is a parabola";
+  if (discriminant > 0)
+    std::cout << "The resulting conic section is a hyperbola";
+  std::cout << " (the discriminant is " << discriminant << ")" << std::endl;
+
+  [[maybe_unused]] const double gt_A = theta_gt(theta::A);
+  [[maybe_unused]] const double gt_B = theta_gt(theta::B);
+  [[maybe_unused]] const double gt_C = theta_gt(theta::C);
+  [[maybe_unused]] const double gt_D = theta_gt(theta::D);
+  [[maybe_unused]] const double gt_E = theta_gt(theta::E);
+  [[maybe_unused]] const double gt_F = theta_gt(theta::F);
+  const double gt_discriminant = gt_B*gt_B - 4*gt_A*gt_C;
+  std::cout << "The GT discriminant is " << gt_discriminant << std::endl;
+
+  const double tmp1 = 2*(A*E*E + C*D*D - B*D*E + discriminant*F);
+  const double tmp2 = sqrt((A - C)*(A - C) + B*B);
+  const double atmp = tmp1*((A + C) + tmp2);
+  const double btmp = tmp1*((A + C) - tmp2);
+  double a = sqrt(abs(atmp))/discriminant;
+  double b = sqrt(abs(btmp))/discriminant;
+  if (a < b)
+    std::swap(a, b);
+  const double x0 = (2*C*D - B*E)/discriminant;
+  const double y0 = (2*A*E - B*D)/discriminant;
+  double th = atan2(C - A - tmp2, B);
+  if (A < C)
+    th += M_PI_2;
+
+  std::cout << "a:\t" << a << ",\t" << gt(6) << std::endl;
+  std::cout << "b:\t" << b << ",\t" << gt(7) << std::endl;
+  std::cout << "x0:\t" << x0 << ",\t" << gt(8) << std::endl;
+  std::cout << "y0:\t" << y0 << ",\t" << gt(9) << std::endl;
+  std::cout << "th:\t" << th << ",\t" << gt(10) << std::endl;
 
   /* save_csv(theta, "theta.csv", ',', "a,b,c,d"); */
 }
