@@ -1,4 +1,4 @@
-#include <balloon_filter/eight_rheiv.h>
+#include <balloon_filter/plane_rheiv.h>
 
 template class mrs_lib::RHEIV<balloon_filter::rheiv::n_states, balloon_filter::rheiv::n_params>;
 
@@ -26,7 +26,7 @@ namespace balloon_filter
   }
 }
 
-#ifdef COMPILE_EIGHT_RHEIV_TEST
+#ifdef COMPILE_PLANE_RHEIV_TEST
 
 #include <iostream>
 #include <fstream>
@@ -124,7 +124,11 @@ int main()
   const Eigen::MatrixXd pts = load_csv<Eigen::MatrixXd>(fname, delim, true);
   const int n_pts = pts.rows();
   [[maybe_unused]] const int cols = pts.cols();
-  assert(cols >= n_states);
+  if (cols < n_states)
+  {
+    std::cerr << "Wrong input data! At least " << n_states << " columns required, but the data only has " << cols << ", aborting." << std::endl;
+    exit(1);
+  }
   std::cout << "Loaded " << n_pts << " points" << std::endl;
   const theta_t theta_gt = load_csv<Eigen::MatrixXd>(plane_fname, delim, true).transpose().normalized();
 
@@ -194,5 +198,5 @@ int main()
 }
 //}
 
-#endif // COMPILE_EIGHT_UKF_TEST
+#endif // COMPILE_PLANE_UKF_TEST
 

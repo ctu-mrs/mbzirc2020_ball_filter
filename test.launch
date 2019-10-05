@@ -4,7 +4,7 @@
   <arg unless="$(arg debug)" name="launch_prefix" value=""/>
   <arg     if="$(arg debug)" name="launch_prefix" value="debug_roslaunch"/>
 
-  <node pkg="balloon_planner" type="eight_rheiv" name="tests" output="screen" launch-prefix="$(arg launch_prefix)" />
+  <node pkg="balloon_filter" type="conic_rheiv" name="tests" output="screen" launch-prefix="$(arg launch_prefix)" />
 
 </launch>
 

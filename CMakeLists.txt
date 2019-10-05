@@ -74,7 +74,8 @@ include_directories(
 ## Declare a C++ executable
 add_library(BalloonFilter
   src/eight_ukf.cpp
-  src/eight_rheiv.cpp
+  src/plane_rheiv.cpp
+  src/conic_rheiv.cpp
   src/BalloonFilter.cpp
   )
 add_dependencies(BalloonFilter
@@ -99,14 +100,27 @@ target_link_libraries(eight_ukf
 target_compile_options(eight_ukf PRIVATE "-DCOMPILE_EIGHT_UKF_TEST")
 
 ## Declare a C++ executable
-add_executable(eight_rheiv
-  src/eight_rheiv.cpp
+add_executable(plane_rheiv
+  src/plane_rheiv.cpp
   )
-add_dependencies(eight_rheiv
+add_dependencies(plane_rheiv
   ${${PROJECT_NAME}_EXPORTED_TARGETS}
   ${catkin_EXPORTED_TARGETS})
 ## Specify libraries to link a library or executable target against
-target_link_libraries(eight_rheiv
+target_link_libraries(plane_rheiv
   ${catkin_LIBRARIES}
   )
-target_compile_options(eight_rheiv PRIVATE "-DCOMPILE_EIGHT_RHEIV_TEST")
+target_compile_options(plane_rheiv PRIVATE "-DCOMPILE_PLANE_RHEIV_TEST")
+
+## Declare a C++ executable
+add_executable(conic_rheiv
+  src/conic_rheiv.cpp
+  )
+add_dependencies(conic_rheiv
+  ${${PROJECT_NAME}_EXPORTED_TARGETS}
+  ${catkin_EXPORTED_TARGETS})
+## Specify libraries to link a library or executable target against
+target_link_libraries(conic_rheiv
+  ${catkin_LIBRARIES}
+  )
+target_compile_options(conic_rheiv PRIVATE "-DCOMPILE_CONIC_RHEIV_TEST")

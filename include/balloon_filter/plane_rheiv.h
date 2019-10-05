@@ -15,17 +15,17 @@ namespace balloon_filter
     using f_z_t = RHEIV::f_z_t;
     using dzdx_t = RHEIV::dzdx_t;
 
-    // This function implements the state transition
+    // This function implements the transformation from x to z
     RHEIV::zs_t f_z_f(const RHEIV::xs_t& xs);
 
     // indices of the state interpretations
     // the state represents plane parameters a*x + b*y + c*z + d = 0
     enum
     {
-      x_a = 0, // 3D x-coordinate of the ball position
-      x_b,     // 3D y-coordinate of the ball position
-      x_c,     // 3D z-coordinate of the ball position
-      x_d,     // yaw of the MAV in the eight-plane
+      x_a = 0,
+      x_b,
+      x_c,
+      x_d,
     };
   }
 }

@@ -11,12 +11,12 @@ ukf:
 process_std:
   position: 0.5
   yaw: 0.01
-  speed: 0.01
+  speed: 0.0001
   curvature: 1.0
 
 init_std:
   yaw: 2.0
-  speed: 0.001
+  speed: 1.0
   curvature: 2.0
 
 z_bounds: # measurements outside these bounds will be ignored
@@ -24,7 +24,7 @@ z_bounds: # measurements outside these bounds will be ignored
   max: 20 # metres
 
 rheiv:
-  fitting_period: 0.1 # seconds
+  fitting_period: 1.0 # seconds
   min_points: 100
   max_points: 500
   visualization_size: 5 # metres

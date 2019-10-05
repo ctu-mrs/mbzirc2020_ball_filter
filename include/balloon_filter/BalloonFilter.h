@@ -40,7 +40,7 @@
 
 // local includes
 #include <balloon_filter/eight_ukf.h>
-#include <balloon_filter/eight_rheiv.h>
+#include <balloon_filter/plane_rheiv.h>
 #include <balloon_filter/FilterParamsConfig.h>
 #include <balloon_filter/ResetEstimates.h>
 #include <balloon_filter/Plane.h>
@@ -229,6 +229,7 @@ namespace balloon_filter
       /* UKF related methods //{ */
       UKF::statecov_t predict_ukf_estimate(const ros::Time& to_stamp, const theta_t& plane_theta);
       bool update_ukf_estimate(const std::vector<pos_cov_t>& measurements, const ros::Time& stamp, pos_cov_t& used_meas, const theta_t& plane_theta);
+      UKF::x_t estimate_ukf_initial_state();
       bool init_ukf_estimate(const ros::Time& stamp, pos_cov_t& used_meas);
       std::vector<std::pair<UKF::x_t, ros::Time>> predict_states(const UKF::statecov_t initial_statecov, const ros::Time& initial_timestamp, const theta_t& plane_theta, const double prediction_horizon, const double prediction_step);
       //}

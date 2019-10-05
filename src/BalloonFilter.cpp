@@ -266,8 +266,49 @@ namespace balloon_filter
   }
   //}
 
-  std::tuple<pos_t, cov_t, double, double, double> estimate_ukf_initial_states()
+  UKF::x_t BalloonFilter::estimate_ukf_initial_state()
   {
+    const auto [rheiv_pts, rheiv_covs, rheiv_stamps, rheiv_new_data, rheiv_last_data_update] = get_rheiv_data();
+
+    /* x_x = 0, // 3D x-coordinate of the ball position */
+    /* x_y,     // 3D y-coordinate of the ball position */
+    /* x_z,     // 3D z-coordinate of the ball position */
+    /* x_yaw,   // yaw of the MAV in the eight-plane */
+    /* x_s,     // the ball speed */
+    /* x_c,     // curvature of the MAV trajectory in the eight-plane */
+    assert(rheiv_pts.size() == rheiv_covs.size());
+    assert(rheiv_pts.size() == rheiv_stamps.size());
+    const int n_pts = rheiv_pts.size();
+
+    ros::Time last_stamp;
+    /* Eigen::Vector3d vel_sum(0, 0, 0); */
+    /* int n_pts_used = 0; */
+    for (int it = n_pts-1; it; it--)
+    {
+      const auto cur_pt = rheiv_pts.at(it);
+      const auto cur_cov = rheiv_covs.at(it);
+      const auto cur_stamp = rheiv_stamps.at(it);
+      if (it == n_pts-1)
+        last_stamp = cur_stamp;
+      if (last_stamp - cur_stamp > ros::Duration(1.0))
+        break;
+      if (it < n_pts-1)
+      {
+        const auto next_pt = rheiv_pts.at(it+1);
+        const auto next_stamp = rheiv_stamps.at(it+1);
+        const double cur_dt = (next_stamp-cur_stamp).toSec();
+        const auto cur_vel = (next_pt-cur_pt)/cur_dt;
+        /* vel_sum += cur_vel; */
+        /* n_pts_used++; */
+      }
+    }
+    /* const auto avg_vel = vel_sum/n_pts_used; */
+
+    // TODO: 
+    // * fit plane through points (or use latest fit?)
+    // * project points to plane
+    // * fit a conic to the points
+    // * calculate its curvature and yaw at the last point
     
   }
 
@@ -276,27 +317,25 @@ namespace balloon_filter
   {
     /* pos_cov_t closest_meas; */
     /* bool meas_valid = find_closest(measurements, closest_meas); */
-    const auto [init_pt, init_cov, init_spd, init_yaw, init_cur] = estimate_ukf_initial_states();
+    const auto init_state = estimate_ukf_initial_state();
     /* if (meas_valid) */
     {
-      ROS_INFO("[UKF]: Initializing estimate using point [%.2f, %.2f, %.2f], speed %.2f, yaw %.2f and curvature %.2f", init_pt.x(), init_pt.y(), init_pt.z(), init_spd, init_yaw, init_cur);
+      ROS_INFO("[UKF]: Initializing estimate using point [%.2f, %.2f, %.2f], speed %.2f, yaw %.2f and curvature %.2f",
+          init_state(ukf::x_x), init_state(ukf::x_y), init_state(ukf::x_z),
+          init_state(ukf::x_s), init_state(ukf::x_yaw), init_state(ukf::x_c));
 
       {
         std::scoped_lock lck(m_ukf_estimate_mtx);
 
-        m_ukf_estimate.x = UKF::x_t::Zero();
-        m_ukf_estimate.x.block<3, 1>(0, 0) = init_pt;
-        m_ukf_estimate.x(ukf::x_yaw) = init_yaw;
-        m_ukf_estimate.x(ukf::x_s) = init_spd;
-        m_ukf_estimate.x(ukf::x_c) = init_cur;
+        m_ukf_estimate.x = init_state;
 
         m_ukf_estimate.P = m_init_std.asDiagonal();
-        m_ukf_estimate.P.block<3, 3>(0, 0) = init_cov;
+        /* m_ukf_estimate.P.block<3, 3>(0, 0) = init_cov; */
         m_ukf_estimate_exists = true;
         m_ukf_last_update = stamp;
         m_ukf_n_updates = 1;
       }
-      used_meas = {init_pt, init_cov};
+      /* used_meas = {init_pt, init_cov}; */
     }
     /* else */
     /* { */
