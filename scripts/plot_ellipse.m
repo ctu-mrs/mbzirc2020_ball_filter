@@ -1,9 +1,10 @@
-function plot_ellipse(a, b, x0, y0, theta, t, varargin)
+function plot_ellipse(a, b, x0, y0, theta, varargin)
 
-Xs = a*cos(t);
-Ys = b*sin(t);
-xs = Xs*cos(theta) + -Ys*sin(theta) + x0;
-ys = Xs*sin(theta) + Ys*cos(theta) + y0;
+t = -pi:0.01:pi;
+t = [t, t(1)];
+X = eval_ellipse(a, b, x0, y0, theta, t);
+xs = X(:, 1);
+ys = X(:, 2);
 
 plot(xs, ys, varargin{:});
 

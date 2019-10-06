@@ -281,6 +281,8 @@ namespace balloon_filter
     const int n_pts = rheiv_pts.size();
 
     ros::Time last_stamp;
+    std::vector<pos_t> used_pts;
+    std::vector<cov_t> used_covs;
     /* Eigen::Vector3d vel_sum(0, 0, 0); */
     /* int n_pts_used = 0; */
     for (int it = n_pts-1; it; it--)
@@ -292,17 +294,21 @@ namespace balloon_filter
         last_stamp = cur_stamp;
       if (last_stamp - cur_stamp > ros::Duration(1.0))
         break;
-      if (it < n_pts-1)
-      {
-        const auto next_pt = rheiv_pts.at(it+1);
-        const auto next_stamp = rheiv_stamps.at(it+1);
-        const double cur_dt = (next_stamp-cur_stamp).toSec();
-        const auto cur_vel = (next_pt-cur_pt)/cur_dt;
+      /* if (it < n_pts-1) */
+      /* { */
+        /* const auto next_pt = rheiv_pts.at(it+1); */
+        /* const auto next_stamp = rheiv_stamps.at(it+1); */
+        /* const double cur_dt = (next_stamp-cur_stamp).toSec(); */
+        /* const auto cur_vel = (next_pt-cur_pt)/cur_dt; */
         /* vel_sum += cur_vel; */
         /* n_pts_used++; */
-      }
+      /* } */
+      used_pts.push_back(cur_pt);
+      used_covs.push_back(cur_cov);
     }
     /* const auto avg_vel = vel_sum/n_pts_used; */
+
+    const auto theta = m_rheiv_conic.fit(std::begin(used_pts), std::end(used_pts), std::begin(used_covs), std::end(used_covs));
 
     // TODO: 
     // * fit plane through points (or use latest fit?)
@@ -988,6 +994,11 @@ namespace balloon_filter
       const rheiv::f_z_t f_z(rheiv::f_z_f);
       const rheiv::dzdx_t dzdx = rheiv::dzdx_t::Identity();
       m_rheiv = RHEIV(f_z, dzdx, 1e-15, 1e4);
+
+      const rheiv_conic::f_z_t f_z_conic(rheiv_conic::f_z_f);
+      const rheiv_conic::f_dzdx_t f_dzdx_conic (rheiv_conic::f_dzdx_f);
+      m_rheiv_conic = RHEIV_conic(f_z_conic, f_dzdx_conic, 1e-9, 1e3);
+
       m_rheiv_pts.set_capacity(m_rheiv_max_pts);
       m_rheiv_covs.set_capacity(m_rheiv_max_pts);
       m_rheiv_theta_valid = false;

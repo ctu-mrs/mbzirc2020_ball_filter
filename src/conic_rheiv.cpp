@@ -262,10 +262,8 @@ int main()
   const double tmp2 = sqrt((A - C)*(A - C) + B*B);
   const double atmp = tmp1*((A + C) + tmp2);
   const double btmp = tmp1*((A + C) - tmp2);
-  double a = sqrt(abs(atmp))/discriminant;
-  double b = sqrt(abs(btmp))/discriminant;
-  if (a < b)
-    std::swap(a, b);
+  const double a = sqrt(abs(atmp))/discriminant;
+  const double b = sqrt(abs(btmp))/discriminant;
   const double x0 = (2*C*D - B*E)/discriminant;
   const double y0 = (2*A*E - B*D)/discriminant;
   double th = atan2(C - A - tmp2, B);

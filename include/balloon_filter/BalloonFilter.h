@@ -41,6 +41,7 @@
 // local includes
 #include <balloon_filter/eight_ukf.h>
 #include <balloon_filter/plane_rheiv.h>
+#include <balloon_filter/conic_rheiv.h>
 #include <balloon_filter/FilterParamsConfig.h>
 #include <balloon_filter/ResetEstimates.h>
 #include <balloon_filter/Plane.h>
@@ -65,6 +66,7 @@ namespace balloon_filter
   using ros_cov_t = ros_poses_t::value_type::_covariance_type;
 
   using RHEIV = rheiv::RHEIV;
+  using RHEIV_conic = rheiv_conic::RHEIV_conic;
   using UKF = ukf::UKF;
   using pos_t = RHEIV::x_t;
   using cov_t = RHEIV::P_t;
@@ -149,6 +151,7 @@ namespace balloon_filter
       // | ----------------- RHEIV related variables ---------------- |
 
       RHEIV m_rheiv;
+      RHEIV_conic m_rheiv_conic;
       std::mutex m_rheiv_data_mtx;
       boost::circular_buffer<pos_t> m_rheiv_pts;
       boost::circular_buffer<cov_t> m_rheiv_covs;
