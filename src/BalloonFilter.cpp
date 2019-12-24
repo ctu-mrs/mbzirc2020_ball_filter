@@ -28,7 +28,7 @@ namespace balloon_filter
         if (plane_theta_valid && (m_pub_plane_dbg.getNumSubscribers() > 0 || m_pub_plane_dbg2.getNumSubscribers()))
         {
           std_msgs::Header header;
-          header.frame_id = m_world_frame;
+          header.frame_id = m_world_frame_id;
           header.stamp = ros::Time::now();
           if (m_pub_plane_dbg.getNumSubscribers())
             m_pub_plane_dbg.publish(to_output_message(plane_theta, header, get_pos(m_ukf_estimate.x)));
@@ -51,7 +51,7 @@ namespace balloon_filter
           {
             /* publish the used measurement for debugging and visualisation purposes //{ */
             std_msgs::Header header;
-            header.frame_id = m_world_frame;
+            header.frame_id = m_world_frame_id;
             header.stamp = balloons.header.stamp;
             m_pub_used_meas.publish(to_output_message(used_meas, header));
             //}
@@ -87,7 +87,7 @@ namespace balloon_filter
       if (plane_theta_valid)
       {
         std_msgs::Header header;
-        header.frame_id = m_world_frame;
+        header.frame_id = m_world_frame_id;
         header.stamp = ros::Time::now();
         auto cur_estimate = predict_ukf_estimate(header.stamp, plane_theta);
         Eigen::IOFormat short_fmt(3);
@@ -158,7 +158,7 @@ namespace balloon_filter
     if (m_pub_used_pts.getNumSubscribers() > 0)
     {
       std_msgs::Header header;
-      header.frame_id = m_world_frame;
+      header.frame_id = m_world_frame_id;
       header.stamp = ros::Time::now();
       m_pub_used_pts.publish(to_output_message(rheiv_pts, header));
     }
@@ -166,7 +166,7 @@ namespace balloon_filter
     if (success)
     {
       std_msgs::Header header;
-      header.frame_id = m_world_frame;
+      header.frame_id = m_world_frame_id;
       header.stamp = stamp;
       m_pub_fitted_plane.publish(to_output_message(theta, header));
     }
@@ -190,7 +190,7 @@ namespace balloon_filter
     {
       const auto predictions = predict_states(ukf_estimate, ukf_last_update, plane_theta, m_prediction_horizon, m_prediction_step);
       balloon_filter::BallPrediction message;
-      message.header.frame_id = m_world_frame;
+      message.header.frame_id = m_world_frame_id;
       message.header.stamp = ukf_last_update;
 
       balloon_filter::Plane fitted_plane = to_output_message(plane_theta);
@@ -933,7 +933,7 @@ namespace balloon_filter
     pl.load_param("rheiv/max_points", m_rheiv_max_pts);
     pl.load_param("rheiv/visualization_size", m_rheiv_visualization_size);
 
-    pl.load_param("world_frame", m_world_frame);
+    pl.load_param("world_frame_id", m_world_frame_id);
     pl.load_param("uav_frame_id", m_uav_frame_id);
     pl.load_param("gating_distance", m_gating_distance);
     pl.load_param("max_time_since_update", m_max_time_since_update);

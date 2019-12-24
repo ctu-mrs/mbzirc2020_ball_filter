@@ -104,7 +104,7 @@ namespace balloon_filter
       // --------------------------------------------------------------
 
       /* Parameters, loaded from ROS //{ */
-      std::string m_world_frame;
+      std::string m_world_frame_id;
       std::string m_uav_frame_id;
 
       double m_rheiv_fitting_period;
@@ -210,11 +210,11 @@ namespace balloon_filter
         try
         {
           const ros::Duration timeout(1.0 / 100.0);
-          geometry_msgs::TransformStamped transform = m_tf_buffer.lookupTransform(m_world_frame, frame_name, stamp, timeout);
+          geometry_msgs::TransformStamped transform = m_tf_buffer.lookupTransform(m_world_frame_id, frame_name, stamp, timeout);
           tf_out = tf2::transformToEigen(transform.transform);
         } catch (tf2::TransformException& ex)
         {
-          ROS_WARN("Error during transform from \"%s\" frame to \"%s\" frame.\n\tMSG: %s", frame_name.c_str(), m_world_frame.c_str(), ex.what());
+          ROS_WARN("Error during transform from \"%s\" frame to \"%s\" frame.\n\tMSG: %s", frame_name.c_str(), m_world_frame_id.c_str(), ex.what());
           return false;
         }
         return true;

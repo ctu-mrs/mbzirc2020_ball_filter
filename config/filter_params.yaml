@@ -1,5 +1,4 @@
 planning_period: 0.01 # seconds
-world_frame: "local_origin"
 gating_distance: 20.0 # meters
 max_time_since_update: 2.0 # seconds
 min_updates_to_confirm: 10
