@@ -41,7 +41,7 @@
 // local includes
 #include <balloon_filter/eight_ukf.h>
 #include <balloon_filter/plane_rheiv.h>
-#include <balloon_filter/conic_rheiv.h>
+/* #include <balloon_filter/conic_rheiv.h> */
 #include <balloon_filter/FilterParamsConfig.h>
 #include <balloon_filter/ResetEstimates.h>
 #include <balloon_filter/Plane.h>
@@ -66,7 +66,7 @@ namespace balloon_filter
   using ros_cov_t = ros_poses_t::value_type::_covariance_type;
 
   using RHEIV = rheiv::RHEIV;
-  using RHEIV_conic = rheiv_conic::RHEIV_conic;
+  /* using RHEIV_conic = rheiv_conic::RHEIV_conic; */
   using UKF = ukf::UKF;
   using pos_t = RHEIV::x_t;
   using cov_t = RHEIV::P_t;
@@ -112,6 +112,7 @@ namespace balloon_filter
       int m_rheiv_max_pts;
       int m_rheiv_visualization_size;
 
+      ros::Duration m_ukf_init_history_duration;
       double m_gating_distance;
       double m_max_time_since_update;
       double m_min_updates_to_confirm;
@@ -120,6 +121,10 @@ namespace balloon_filter
 
       double m_prediction_horizon;
       double m_prediction_step;
+
+      double m_ball_speed1;
+      double m_ball_speed2;
+      ros::Time m_ball_speed_change;
 
       UKF::x_t m_process_std;
       UKF::x_t m_init_std;
@@ -150,8 +155,10 @@ namespace balloon_filter
 
       // | ----------------- RHEIV related variables ---------------- |
 
+      /*  //{ */
+      
       RHEIV m_rheiv;
-      RHEIV_conic m_rheiv_conic;
+      /* RHEIV_conic m_rheiv_conic; */
       std::mutex m_rheiv_data_mtx;
       boost::circular_buffer<pos_t> m_rheiv_pts;
       boost::circular_buffer<cov_t> m_rheiv_covs;
@@ -174,7 +181,7 @@ namespace balloon_filter
         m_rheiv_new_data = false;
         return {m_rheiv_pts, m_rheiv_covs, m_rheiv_stamps, got_new_data, m_rheiv_last_data_update};
       };
-
+      
       std::mutex m_rheiv_theta_mtx;
       bool m_rheiv_theta_valid;
       rheiv::theta_t m_rheiv_theta;
@@ -184,8 +191,12 @@ namespace balloon_filter
         return {m_rheiv_theta_valid, m_rheiv_theta};
       };
       
+      //}
+      
       // | ------------------ UKF related variables ----------------- |
 
+      /*  //{ */
+      
       UKF m_ukf;
       std::mutex m_ukf_estimate_mtx;
       bool m_ukf_estimate_exists;
@@ -197,6 +208,10 @@ namespace balloon_filter
         std::scoped_lock lck(m_ukf_estimate_mtx);
         return {m_ukf_estimate_exists, m_ukf_estimate, m_ukf_last_update, m_ukf_n_updates};
       };
+      
+      //}
+
+      // | --------------------- Other variables -------------------- |
 
     private:
 
@@ -227,13 +242,14 @@ namespace balloon_filter
       quat_t plane_orientation(const theta_t& plane_theta);
       double plane_angle(const theta_t& plane1, const theta_t& plane2);
       pos_t plane_origin(const theta_t& plane_theta, const pos_t& origin);
-      UKF::u_t plane_theta_to_ukf_u(const theta_t& plane_theta);
+      UKF::u_t construct_u(const theta_t& plane_theta, const double speed);
+      double ball_speed_at_time(const ros::Time& timestamp);
 
       /* UKF related methods //{ */
       UKF::statecov_t predict_ukf_estimate(const ros::Time& to_stamp, const theta_t& plane_theta);
       bool update_ukf_estimate(const std::vector<pos_cov_t>& measurements, const ros::Time& stamp, pos_cov_t& used_meas, const theta_t& plane_theta);
-      UKF::x_t estimate_ukf_initial_state();
-      bool init_ukf_estimate(const ros::Time& stamp, pos_cov_t& used_meas);
+      UKF::statecov_t estimate_ukf_initial_state(const theta_t& plane_theta);
+      bool init_ukf_estimate(const ros::Time& stamp, pos_cov_t& used_meas, const theta_t& plane_theta);
       std::vector<std::pair<UKF::x_t, ros::Time>> predict_states(const UKF::statecov_t initial_statecov, const ros::Time& initial_timestamp, const theta_t& plane_theta, const double prediction_horizon, const double prediction_step);
       //}
 

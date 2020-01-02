@@ -33,7 +33,7 @@ namespace balloon_filter
 
       // Calculate the complete current state with redundant variables
       const double yaw = in(x_yaw);
-      const double speed = std::max(in(x_s), 0.0);
+      const double speed = std::max(u(u_s), 0.0);
       const double curv = in(x_c);
       // reference for curvature: https://web.ma.utexas.edu/users/m408m/Display13-4-3.shtml
       const Quat quat = Quat(u(u_qw), u(u_qx), u(u_qy), u(u_qz)).normalized();
@@ -46,7 +46,7 @@ namespace balloon_filter
 
       // Calculate the next estimated state
       const Vec3 n_pos_world = pos_world + quat*dpos;
-      const double n_speed = speed; // assume constant speed
+      /* const double n_speed = speed; // assume constant speed */
       const double n_yaw = yaw + speed*curv*dt;
       const double n_curv = curv;
 
@@ -55,7 +55,7 @@ namespace balloon_filter
       out(x_y) = n_pos_world.y();
       out(x_z) = n_pos_world.z();
       out(x_yaw) = n_yaw;
-      out(x_s) = n_speed;
+      /* out(x_s) = n_speed; */
       out(x_c) = n_curv;
 
       return out;

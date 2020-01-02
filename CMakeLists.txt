@@ -75,7 +75,7 @@ include_directories(
 add_library(BalloonFilter
   src/eight_ukf.cpp
   src/plane_rheiv.cpp
-  src/conic_rheiv.cpp
+  # src/conic_rheiv.cpp
   src/BalloonFilter.cpp
   )
 add_dependencies(BalloonFilter
@@ -112,15 +112,15 @@ target_link_libraries(plane_rheiv
   )
 target_compile_options(plane_rheiv PRIVATE "-DCOMPILE_PLANE_RHEIV_TEST")
 
-## Declare a C++ executable
-add_executable(conic_rheiv
-  src/conic_rheiv.cpp
-  )
-add_dependencies(conic_rheiv
-  ${${PROJECT_NAME}_EXPORTED_TARGETS}
-  ${catkin_EXPORTED_TARGETS})
-## Specify libraries to link a library or executable target against
-target_link_libraries(conic_rheiv
-  ${catkin_LIBRARIES}
-  )
-target_compile_options(conic_rheiv PRIVATE "-DCOMPILE_CONIC_RHEIV_TEST")
+# ## Declare a C++ executable
+# add_executable(conic_rheiv
+#   src/conic_rheiv.cpp
+#   )
+# add_dependencies(conic_rheiv
+#   ${${PROJECT_NAME}_EXPORTED_TARGETS}
+#   ${catkin_EXPORTED_TARGETS})
+# ## Specify libraries to link a library or executable target against
+# target_link_libraries(conic_rheiv
+#   ${catkin_LIBRARIES}
+#   )
+# target_compile_options(conic_rheiv PRIVATE "-DCOMPILE_CONIC_RHEIV_TEST")

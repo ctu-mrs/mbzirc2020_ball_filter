@@ -45,7 +45,7 @@ namespace balloon_filter
           if (m_ukf_estimate_exists)
             used_meas_valid = update_ukf_estimate(measurements, balloons.header.stamp, used_meas, plane_theta);
           else
-            used_meas_valid = init_ukf_estimate(balloons.header.stamp, used_meas);
+            used_meas_valid = init_ukf_estimate(balloons.header.stamp, used_meas, plane_theta);
 
           if (used_meas_valid)
           {
@@ -219,7 +219,7 @@ namespace balloon_filter
     const double dt = (to_stamp - m_ukf_last_update).toSec();
     const UKF::Q_t Q = dt * m_process_std.asDiagonal();
 
-    const UKF::u_t u = plane_theta_to_ukf_u(plane_theta);
+    const UKF::u_t u = construct_u(plane_theta, ball_speed_at_time(to_stamp));
     auto ukf_estimate = m_ukf_estimate;
 
     const auto ret = m_ukf.predict(ukf_estimate, u, Q, dt);
@@ -241,7 +241,7 @@ namespace balloon_filter
       ROS_INFO_THROTTLE(MSG_THROTTLE, "[UKF]: Updating current estimate using point [%.2f, %.2f, %.2f]", closest_meas.pos.x(), closest_meas.pos.y(),
                         closest_meas.pos.z());
       const double dt = (stamp - ukf_last_update).toSec();
-      const UKF::u_t u = plane_theta_to_ukf_u(plane_theta);
+      const UKF::u_t u = construct_u(plane_theta, ball_speed_at_time(stamp));
       const UKF::Q_t Q = dt * m_process_std.asDiagonal();
 
       ukf_estimate = m_ukf.predict(ukf_estimate, u, Q, dt);
@@ -266,23 +266,22 @@ namespace balloon_filter
   }
   //}
 
-  UKF::x_t BalloonFilter::estimate_ukf_initial_state()
+  /* estimate_ukf_initial_state() method //{ */
+  UKF::statecov_t BalloonFilter::estimate_ukf_initial_state(const theta_t& plane_theta)
   {
     const auto [rheiv_pts, rheiv_covs, rheiv_stamps, rheiv_new_data, rheiv_last_data_update] = get_rheiv_data();
-
+  
     /* x_x = 0, // 3D x-coordinate of the ball position */
     /* x_y,     // 3D y-coordinate of the ball position */
     /* x_z,     // 3D z-coordinate of the ball position */
     /* x_yaw,   // yaw of the MAV in the eight-plane */
-    /* x_s,     // the ball speed */
     /* x_c,     // curvature of the MAV trajectory in the eight-plane */
     assert(rheiv_pts.size() == rheiv_covs.size());
     assert(rheiv_pts.size() == rheiv_stamps.size());
     const int n_pts = rheiv_pts.size();
-
+  
     ros::Time last_stamp;
-    std::vector<pos_t> used_pts;
-    std::vector<cov_t> used_covs;
+    std::vector<std::tuple<pos_t, cov_t, ros::Time>> used_meass;
     /* Eigen::Vector3d vel_sum(0, 0, 0); */
     /* int n_pts_used = 0; */
     for (int it = n_pts-1; it; it--)
@@ -292,56 +291,79 @@ namespace balloon_filter
       const auto cur_stamp = rheiv_stamps.at(it);
       if (it == n_pts-1)
         last_stamp = cur_stamp;
-      if (last_stamp - cur_stamp > ros::Duration(1.0))
+      if (last_stamp - cur_stamp > m_ukf_init_history_duration)
         break;
-      /* if (it < n_pts-1) */
-      /* { */
-        /* const auto next_pt = rheiv_pts.at(it+1); */
-        /* const auto next_stamp = rheiv_stamps.at(it+1); */
-        /* const double cur_dt = (next_stamp-cur_stamp).toSec(); */
-        /* const auto cur_vel = (next_pt-cur_pt)/cur_dt; */
-        /* vel_sum += cur_vel; */
-        /* n_pts_used++; */
-      /* } */
-      used_pts.push_back(cur_pt);
-      used_covs.push_back(cur_cov);
+      used_meass.push_back({cur_pt, cur_cov, cur_stamp});
     }
     /* const auto avg_vel = vel_sum/n_pts_used; */
-
-    const auto theta = m_rheiv_conic.fit(std::begin(used_pts), std::end(used_pts), std::begin(used_covs), std::end(used_covs));
-
+  
+    /* const auto theta = m_rheiv_conic.fit(std::begin(used_pts), std::end(used_pts), std::begin(used_covs), std::end(used_covs)); */
+  
     // TODO: 
     // * fit plane through points (or use latest fit?)
     // * project points to plane
     // * fit a conic to the points
     // * calculate its curvature and yaw at the last point
-    
+  
+    UKF::statecov_t statecov;
+    ros::Time prev_stamp;
+    bool statecov_initd = false;
+
+    for (size_t it = used_meass.size()-1; it; it--)
+    {
+      const auto [cur_pt, cur_cov, cur_stamp] = used_meass.at(it);
+      if (!statecov_initd)
+      {
+        statecov.x(ukf::x_x) = cur_pt.x();
+        statecov.x(ukf::x_y) = cur_pt.y();
+        statecov.x(ukf::x_z) = cur_pt.z();
+        statecov.x(ukf::x_yaw) = 0.0;
+        statecov.x(ukf::x_c) = 0.0;
+        m_ukf_estimate.P = m_init_std.asDiagonal();
+        statecov.P.block<3, 3>(ukf::x_x, ukf::x_x) = cur_cov;
+        prev_stamp = cur_stamp;
+      }
+      else
+      {
+        const double dt = (cur_stamp - prev_stamp).toSec();
+        assert(dt > 0.0);
+        const UKF::u_t u = construct_u(plane_theta, ball_speed_at_time(cur_stamp));
+        const UKF::Q_t Q = dt * m_process_std.asDiagonal();
+
+        statecov = m_ukf.predict(statecov, u, Q, dt);
+        statecov = m_ukf.correct(statecov, cur_pt, cur_cov);
+        prev_stamp = cur_stamp;
+      }
+    }
+    return statecov;
   }
+  //}
 
   /* init_ukf_estimate() method //{ */
-  bool BalloonFilter::init_ukf_estimate(const ros::Time& stamp, pos_cov_t& used_meas)
+  bool BalloonFilter::init_ukf_estimate(const ros::Time& stamp, pos_cov_t& used_meas, const theta_t& plane_theta)
   {
     /* pos_cov_t closest_meas; */
     /* bool meas_valid = find_closest(measurements, closest_meas); */
-    const auto init_state = estimate_ukf_initial_state();
+    const auto [init_state, init_cov] = estimate_ukf_initial_state(plane_theta);
     /* if (meas_valid) */
     {
-      ROS_INFO("[UKF]: Initializing estimate using point [%.2f, %.2f, %.2f], speed %.2f, yaw %.2f and curvature %.2f",
+      ROS_INFO("[UKF]: Initializing estimate using point [%.2f, %.2f, %.2f], yaw %.2f and curvature %.2f",
           init_state(ukf::x_x), init_state(ukf::x_y), init_state(ukf::x_z),
-          init_state(ukf::x_s), init_state(ukf::x_yaw), init_state(ukf::x_c));
+          init_state(ukf::x_yaw), init_state(ukf::x_c));
 
       {
         std::scoped_lock lck(m_ukf_estimate_mtx);
 
         m_ukf_estimate.x = init_state;
+        m_ukf_estimate.P = init_cov;
 
-        m_ukf_estimate.P = m_init_std.asDiagonal();
-        /* m_ukf_estimate.P.block<3, 3>(0, 0) = init_cov; */
         m_ukf_estimate_exists = true;
         m_ukf_last_update = stamp;
         m_ukf_n_updates = 1;
       }
-      /* used_meas = {init_pt, init_cov}; */
+      const pos_t init_pt(init_state(ukf::x_x), init_state(ukf::x_y), init_state(ukf::x_z));
+      const cov_t init_pt_cov = init_cov.block<3, 3>(0, 0);
+      used_meas = {init_pt, init_pt_cov};
     }
     /* else */
     /* { */
@@ -394,7 +416,6 @@ namespace balloon_filter
     assert(prediction_step > 0.0);
     assert(prediction_horizon > 0.0);
     const int n_pts = round(prediction_horizon / prediction_step);
-    const UKF::u_t u = plane_theta_to_ukf_u(plane_theta);
     const UKF::Q_t Q = prediction_step * m_process_std.asDiagonal();
 
     UKF::statecov_t statecov = initial_statecov;
@@ -404,8 +425,9 @@ namespace balloon_filter
     ret.push_back({statecov.x, timestamp});
     for (int it = 0; it < n_pts; it++)
     {
-      statecov = m_ukf.predict(statecov, u, Q, prediction_step);
       timestamp += ros::Duration(prediction_step);
+      const UKF::u_t u = construct_u(plane_theta, ball_speed_at_time(timestamp));
+      statecov = m_ukf.predict(statecov, u, Q, prediction_step);
       ret.push_back({statecov.x, timestamp});
     }
     return ret;
@@ -710,7 +732,7 @@ namespace balloon_filter
     ret.position.y = ukf_statecov.x(ukf::x_y);
     ret.position.z = ukf_statecov.x(ukf::x_z);
     ret.yaw = ukf_statecov.x(ukf::x_yaw);
-    ret.speed = ukf_statecov.x(ukf::x_s);
+    /* ret.speed = ukf_statecov.x(ukf::x_s); */
     ret.curvature = ukf_statecov.x(ukf::x_c);
     return ret;
   }
@@ -874,16 +896,27 @@ namespace balloon_filter
   }
   //}
 
-  /* plane_theta_to_ukf_u() method //{ */
-  UKF::u_t BalloonFilter::plane_theta_to_ukf_u(const theta_t& plane_theta)
+  /* construct_u() method //{ */
+  UKF::u_t BalloonFilter::construct_u(const theta_t& plane_theta, const double speed)
   {
     const quat_t quat = plane_orientation(plane_theta);
     UKF::u_t ret;
+    ret(ukf::u_s) = speed;
     ret(ukf::u_qw) = quat.w();
     ret(ukf::u_qx) = quat.x();
     ret(ukf::u_qy) = quat.y();
     ret(ukf::u_qz) = quat.z();
     return ret;
+  }
+  //}
+
+  /* ball_speed_at_time() method //{ */
+  double BalloonFilter::ball_speed_at_time(const ros::Time& timestamp)
+  {
+    if (timestamp < m_ball_speed_change)
+      return m_ball_speed1;
+    else
+      return m_ball_speed2;
   }
   //}
 
@@ -900,11 +933,11 @@ namespace balloon_filter
 
     m_process_std(ukf::x_x) = m_process_std(ukf::x_y) = m_process_std(ukf::x_z) = cfg.process_std__position;
     m_process_std(ukf::x_yaw) = cfg.process_std__yaw;
-    m_process_std(ukf::x_s) = cfg.process_std__speed;
+    /* m_process_std(ukf::x_s) = cfg.process_std__speed; */
     m_process_std(ukf::x_c) = cfg.process_std__curvature;
 
     m_init_std(ukf::x_yaw) = cfg.init_std__yaw;
-    m_init_std(ukf::x_s) = cfg.init_std__speed;
+    /* m_init_std(ukf::x_s) = cfg.init_std__speed; */
     m_init_std(ukf::x_c) = cfg.init_std__curvature;
   }
   //}
@@ -938,6 +971,13 @@ namespace balloon_filter
     pl.load_param("gating_distance", m_gating_distance);
     pl.load_param("max_time_since_update", m_max_time_since_update);
     pl.load_param("min_updates_to_confirm", m_min_updates_to_confirm);
+    pl.load_param("ball_speed1", m_ball_speed1);
+    pl.load_param("ball_speed2", m_ball_speed2);
+    const ros::Duration ball_speed_change_after = pl.load_param2("ball_speed_change_after");
+    // TODO: set the time in some smarter manner
+    m_ball_speed_change = ros::Time::now() + ball_speed_change_after;
+
+    pl.load_param("ukf/init_history_duration", m_ukf_init_history_duration);
     pl.load_param("ukf/prediction_step", m_prediction_step);
     const double prediction_period = pl.load_param2<double>("ukf/prediction_period");
 
@@ -995,9 +1035,9 @@ namespace balloon_filter
       const rheiv::dzdx_t dzdx = rheiv::dzdx_t::Identity();
       m_rheiv = RHEIV(f_z, dzdx, 1e-15, 1e4);
 
-      const rheiv_conic::f_z_t f_z_conic(rheiv_conic::f_z_f);
-      const rheiv_conic::f_dzdx_t f_dzdx_conic (rheiv_conic::f_dzdx_f);
-      m_rheiv_conic = RHEIV_conic(f_z_conic, f_dzdx_conic, 1e-9, 1e3);
+      /* const rheiv_conic::f_z_t f_z_conic(rheiv_conic::f_z_f); */
+      /* const rheiv_conic::f_dzdx_t f_dzdx_conic (rheiv_conic::f_dzdx_f); */
+      /* m_rheiv_conic = RHEIV_conic(f_z_conic, f_dzdx_conic, 1e-9, 1e3); */
 
       m_rheiv_pts.set_capacity(m_rheiv_max_pts);
       m_rheiv_covs.set_capacity(m_rheiv_max_pts);
