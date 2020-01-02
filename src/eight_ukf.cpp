@@ -32,17 +32,17 @@ namespace balloon_filter
       x_t out;
 
       // Calculate the complete current state with redundant variables
-      const double yaw = in(x_yaw);
-      const double speed = std::max(u(u_s), 0.0);
-      const double curv = in(x_c);
+      const double yaw = in(x::yaw);
+      const double speed = std::max(u(u::s), 0.0);
+      const double curv = in(x::c);
       // reference for curvature: https://web.ma.utexas.edu/users/m408m/Display13-4-3.shtml
-      const Quat quat = Quat(u(u_qw), u(u_qx), u(u_qy), u(u_qz)).normalized();
+      const Quat quat = Quat(u(u::qw), u(u::qx), u(u::qy), u(u::qz)).normalized();
       const Vec3 tang(cos(yaw), sin(yaw), 0.0);
       const Vec3 norm(cos(yaw + M_PI_2), sin(yaw + M_PI_2), 0.0);
       const Vec3 vel_tang = speed*tang;
       const Vec3 acc_norm = curv*speed*speed*norm;
       const Vec3 dpos = vel_tang*dt + 0.5*acc_norm*dt*dt;
-      const Vec3 pos_world(in(x_x), in(x_y), in(x_z));
+      const Vec3 pos_world(in(x::x), in(x::y), in(x::z));
 
       // Calculate the next estimated state
       const Vec3 n_pos_world = pos_world + quat*dpos;
@@ -51,12 +51,12 @@ namespace balloon_filter
       const double n_curv = curv;
 
       // Copy the calculated values to the respective states
-      out(x_x) = n_pos_world.x();
-      out(x_y) = n_pos_world.y();
-      out(x_z) = n_pos_world.z();
-      out(x_yaw) = n_yaw;
-      /* out(x_s) = n_speed; */
-      out(x_c) = n_curv;
+      out(x::x) = n_pos_world.x();
+      out(x::y) = n_pos_world.y();
+      out(x::z) = n_pos_world.z();
+      out(x::yaw) = n_yaw;
+      /* out(x::s) = n_speed; */
+      out(x::c) = n_curv;
 
       return out;
     }
@@ -65,9 +65,9 @@ namespace balloon_filter
     UKF::z_t obs_model_f(const UKF::x_t& state)
     {
       z_t observation;
-      observation(z_x) = state(x_x);
-      observation(z_y) = state(x_y);
-      observation(z_z) = state(x_z);
+      observation(z::x) = state(x::x);
+      observation(z::y) = state(x::y);
+      observation(z::z) = state(x::z);
       return observation;
     }
 
@@ -84,7 +84,7 @@ namespace balloon_filter
     UKF::x_t normalize_state(const UKF::x_t& in)
     {
       UKF::x_t out = in;
-      out(x_yaw) = normalize_angle(in(x_yaw));
+      out(x::yaw) = normalize_angle(in(x::yaw));
       return out;
     }
   }

@@ -48,7 +48,7 @@
 #include <balloon_filter/UKFState.h>
 #include <balloon_filter/BallPrediction.h>
 #include <balloon_filter/PlaneStamped.h>
-#include <object_detect/PoseWithCovarianceArrayStamped.h>
+#include <object_detect/BallDetections.h>
 
 //}
 
@@ -60,10 +60,10 @@ namespace balloon_filter
   using drcfg_t = balloon_filter::FilterParamsConfig;
   using drmgr_t = mrs_lib::DynamicReconfigureMgr<drcfg_t>;
 
-  using detections_t = object_detect::PoseWithCovarianceArrayStamped;
-  using ros_poses_t = detections_t::_poses_type;
-  using ros_pose_t = ros_poses_t::value_type::_pose_type;
-  using ros_cov_t = ros_poses_t::value_type::_covariance_type;
+  using detections_t = object_detect::BallDetections;
+  using ros_poses_t = detections_t::_detections_type;
+  using ros_pose_t = ros_poses_t::value_type::_pose_type::_pose_type;
+  using ros_cov_t = ros_poses_t::value_type::_pose_type::_covariance_type;
 
   using RHEIV = rheiv::RHEIV;
   /* using RHEIV_conic = rheiv_conic::RHEIV_conic; */

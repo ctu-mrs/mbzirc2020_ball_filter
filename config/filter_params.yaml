@@ -11,7 +11,7 @@ ukf:
   prediction_horizon: 10.0 # seconds
   prediction_step: 0.5 # seconds
   prediction_period: 0.05 # seconds
-  init_history_duration: 5 # seconds
+  init_history_duration: 10.0 # seconds
 
 process_std:
   position: 0.5

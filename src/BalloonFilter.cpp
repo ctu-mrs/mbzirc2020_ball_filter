@@ -1,3 +1,4 @@
+// TODO: filter measurements by relative velocity, which is known
 #include <balloon_filter/BalloonFilter.h>
 
 namespace balloon_filter
@@ -12,7 +13,7 @@ namespace balloon_filter
     {
       const auto balloons = *(m_sh_balloons->get_data());
 
-      if (!balloons.poses.empty())
+      if (!balloons.detections.empty())
       {
         /* ROS_INFO("[%s]: Processing %lu new detections vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv", m_node_name.c_str(), balloons.poses.size()); */
 
@@ -271,19 +272,14 @@ namespace balloon_filter
   {
     const auto [rheiv_pts, rheiv_covs, rheiv_stamps, rheiv_new_data, rheiv_last_data_update] = get_rheiv_data();
   
-    /* x_x = 0, // 3D x-coordinate of the ball position */
-    /* x_y,     // 3D y-coordinate of the ball position */
-    /* x_z,     // 3D z-coordinate of the ball position */
-    /* x_yaw,   // yaw of the MAV in the eight-plane */
-    /* x_c,     // curvature of the MAV trajectory in the eight-plane */
     assert(rheiv_pts.size() == rheiv_covs.size());
     assert(rheiv_pts.size() == rheiv_stamps.size());
+    assert(!rheiv_pts.empty());
     const int n_pts = rheiv_pts.size();
   
+    ros::Time cur_time = ros::Time::now();
     ros::Time last_stamp;
     std::vector<std::tuple<pos_t, cov_t, ros::Time>> used_meass;
-    /* Eigen::Vector3d vel_sum(0, 0, 0); */
-    /* int n_pts_used = 0; */
     for (int it = n_pts-1; it; it--)
     {
       const auto cur_pt = rheiv_pts.at(it);
@@ -291,19 +287,23 @@ namespace balloon_filter
       const auto cur_stamp = rheiv_stamps.at(it);
       if (it == n_pts-1)
         last_stamp = cur_stamp;
-      if (last_stamp - cur_stamp > m_ukf_init_history_duration)
+      if (cur_time - cur_stamp > m_ukf_init_history_duration)
         break;
       used_meass.push_back({cur_pt, cur_cov, cur_stamp});
     }
-    /* const auto avg_vel = vel_sum/n_pts_used; */
-  
-    /* const auto theta = m_rheiv_conic.fit(std::begin(used_pts), std::end(used_pts), std::begin(used_covs), std::end(used_covs)); */
   
     // TODO: 
     // * fit plane through points (or use latest fit?)
     // * project points to plane
     // * fit a conic to the points
     // * calculate its curvature and yaw at the last point
+    /* const auto theta = m_rheiv_conic.fit(std::begin(used_pts), std::end(used_pts), std::begin(used_covs), std::end(used_covs)); */
+
+    if (used_meass.empty())
+    {
+      ROS_ERROR("[BalloonFilter]: No recent points available for initial state estimation. Newest point is %.2fs old, need at most %.2fs.", (cur_time - rheiv_stamps.back()).toSec(), m_ukf_init_history_duration.toSec());
+      return {};
+    }
   
     UKF::statecov_t statecov;
     ros::Time prev_stamp;
@@ -314,14 +314,15 @@ namespace balloon_filter
       const auto [cur_pt, cur_cov, cur_stamp] = used_meass.at(it);
       if (!statecov_initd)
       {
-        statecov.x(ukf::x_x) = cur_pt.x();
-        statecov.x(ukf::x_y) = cur_pt.y();
-        statecov.x(ukf::x_z) = cur_pt.z();
-        statecov.x(ukf::x_yaw) = 0.0;
-        statecov.x(ukf::x_c) = 0.0;
-        m_ukf_estimate.P = m_init_std.asDiagonal();
-        statecov.P.block<3, 3>(ukf::x_x, ukf::x_x) = cur_cov;
+        statecov.x(ukf::x::x) = cur_pt.x();
+        statecov.x(ukf::x::y) = cur_pt.y();
+        statecov.x(ukf::x::z) = cur_pt.z();
+        statecov.x(ukf::x::yaw) = 0.0;
+        statecov.x(ukf::x::c) = 0.0;
+        statecov.P = m_init_std.asDiagonal();
+        statecov.P.block<3, 3>(ukf::x::x, ukf::x::x) = cur_cov;
         prev_stamp = cur_stamp;
+        statecov_initd = true;
       }
       else
       {
@@ -348,8 +349,8 @@ namespace balloon_filter
     /* if (meas_valid) */
     {
       ROS_INFO("[UKF]: Initializing estimate using point [%.2f, %.2f, %.2f], yaw %.2f and curvature %.2f",
-          init_state(ukf::x_x), init_state(ukf::x_y), init_state(ukf::x_z),
-          init_state(ukf::x_yaw), init_state(ukf::x_c));
+          init_state(ukf::x::x), init_state(ukf::x::y), init_state(ukf::x::z),
+          init_state(ukf::x::yaw), init_state(ukf::x::c));
 
       {
         std::scoped_lock lck(m_ukf_estimate_mtx);
@@ -361,7 +362,7 @@ namespace balloon_filter
         m_ukf_last_update = stamp;
         m_ukf_n_updates = 1;
       }
-      const pos_t init_pt(init_state(ukf::x_x), init_state(ukf::x_y), init_state(ukf::x_z));
+      const pos_t init_pt(init_state(ukf::x::x), init_state(ukf::x::y), init_state(ukf::x::z));
       const cov_t init_pt_cov = init_cov.block<3, 3>(0, 0);
       used_meas = {init_pt, init_pt_cov};
     }
@@ -648,7 +649,7 @@ namespace balloon_filter
     {
       const UKF::x_t& state = pred.first;
       const ros::Time& timestamp = pred.second;
-      const quat_t yaw_quat(Eigen::AngleAxisd(state(ukf::x_yaw), Eigen::Vector3d::UnitZ()));
+      const quat_t yaw_quat(Eigen::AngleAxisd(state(ukf::x::yaw), Eigen::Vector3d::UnitZ()));
       const quat_t ori_quat = plane_quat * yaw_quat;
       geometry_msgs::PoseStamped pose;
       pose.header = header;
@@ -728,12 +729,12 @@ namespace balloon_filter
   balloon_filter::UKFState BalloonFilter::to_output_message(const UKF::statecov_t& ukf_statecov)
   {
     balloon_filter::UKFState ret;
-    ret.position.x = ukf_statecov.x(ukf::x_x);
-    ret.position.y = ukf_statecov.x(ukf::x_y);
-    ret.position.z = ukf_statecov.x(ukf::x_z);
-    ret.yaw = ukf_statecov.x(ukf::x_yaw);
-    /* ret.speed = ukf_statecov.x(ukf::x_s); */
-    ret.curvature = ukf_statecov.x(ukf::x_c);
+    ret.position.x = ukf_statecov.x(ukf::x::x);
+    ret.position.y = ukf_statecov.x(ukf::x::y);
+    ret.position.z = ukf_statecov.x(ukf::x::z);
+    ret.yaw = ukf_statecov.x(ukf::x::yaw);
+    /* ret.speed = ukf_statecov.x(ukf::x::s); */
+    ret.curvature = ukf_statecov.x(ukf::x::c);
     return ret;
   }
   //}
@@ -804,11 +805,11 @@ namespace balloon_filter
       return ret;
     const Eigen::Matrix3d s2w_rot = s2w_tf.rotation();
 
-    ret.reserve(balloon_msg.poses.size());
-    for (size_t it = 0; it < balloon_msg.poses.size(); it++)
+    ret.reserve(balloon_msg.detections.size());
+    for (const auto& det : balloon_msg.detections)
     {
-      const auto msg_pos = balloon_msg.poses[it].pose;
-      const auto msg_cov = balloon_msg.poses[it].covariance;
+      const auto msg_pos = det.pose.pose;
+      const auto msg_cov = det.pose.covariance;
       const pos_t pos = s2w_tf * pos_t(msg_pos.position.x, msg_pos.position.y, msg_pos.position.z);
       if (point_valid(pos))
       {
@@ -901,11 +902,11 @@ namespace balloon_filter
   {
     const quat_t quat = plane_orientation(plane_theta);
     UKF::u_t ret;
-    ret(ukf::u_s) = speed;
-    ret(ukf::u_qw) = quat.w();
-    ret(ukf::u_qx) = quat.x();
-    ret(ukf::u_qy) = quat.y();
-    ret(ukf::u_qz) = quat.z();
+    ret(ukf::u::s) = speed;
+    ret(ukf::u::qw) = quat.w();
+    ret(ukf::u::qx) = quat.x();
+    ret(ukf::u::qy) = quat.y();
+    ret(ukf::u::qz) = quat.z();
     return ret;
   }
   //}
@@ -931,14 +932,14 @@ namespace balloon_filter
 
     m_prediction_horizon = cfg.ukf__prediction_horizon;
 
-    m_process_std(ukf::x_x) = m_process_std(ukf::x_y) = m_process_std(ukf::x_z) = cfg.process_std__position;
-    m_process_std(ukf::x_yaw) = cfg.process_std__yaw;
+    m_process_std(ukf::x::x) = m_process_std(ukf::x::y) = m_process_std(ukf::x::z) = cfg.process_std__position;
+    m_process_std(ukf::x::yaw) = cfg.process_std__yaw;
     /* m_process_std(ukf::x_s) = cfg.process_std__speed; */
-    m_process_std(ukf::x_c) = cfg.process_std__curvature;
+    m_process_std(ukf::x::c) = cfg.process_std__curvature;
 
-    m_init_std(ukf::x_yaw) = cfg.init_std__yaw;
+    m_init_std(ukf::x::yaw) = cfg.init_std__yaw;
     /* m_init_std(ukf::x_s) = cfg.init_std__speed; */
-    m_init_std(ukf::x_c) = cfg.init_std__curvature;
+    m_init_std(ukf::x::c) = cfg.init_std__curvature;
   }
   //}
 
@@ -1041,6 +1042,7 @@ namespace balloon_filter
 
       m_rheiv_pts.set_capacity(m_rheiv_max_pts);
       m_rheiv_covs.set_capacity(m_rheiv_max_pts);
+      m_rheiv_stamps.set_capacity(m_rheiv_max_pts);
       m_rheiv_theta_valid = false;
     }
 

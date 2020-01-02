@@ -6,6 +6,8 @@ import numpy as np
 from matplotlib import pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
+# #{ helper functions
+
 # Point on a circle, defined by an angle
 def circle_point_ang(orig, radius, angle):
     x = radius * np.cos(angle) + orig[0]
@@ -83,20 +85,23 @@ def save_data(data, ofname, col_names=None):
             txt = ",".join(map(str, row))
             of.write("{:s}\n".format(txt))
 
+
+# #} end of helper functions
+
 def main():
     rospy.init_node("eight_generator")
 
     # parameters of the pattern
-    radius = rospy.get_param("~pattern/radius", 5.5)          # metres
-    width = rospy.get_param("~pattern/width", 25)             # metres
-    lin_cutoff = rospy.get_param("~pattern/lin_cutoff", 1)    # metres
+    radius = rospy.get_param("~pattern/radius", 10.5)          # metres
+    width = rospy.get_param("~pattern/width", 55)             # metres
+    lin_cutoff = rospy.get_param("~pattern/lin_cutoff", 5)    # metres
 
     # parameters of transformation of the eight pattern
-    pattern_rotation_ypr = rospy.get_param("~pattern/rotation_ypr", [1.0, 2.0, 3.0])          # radians
-    pattern_translation = rospy.get_param("~pattern/translation", [5.0, -3.0, 4.0])           # metres
+    pattern_rotation_ypr = rospy.get_param("~pattern/rotation_ypr", [0.0, 0.1, 0.1])          # radians
+    pattern_translation = rospy.get_param("~pattern/translation", [5.0, -3.0, 8.0])           # metres
 
     # parameters of the sampling
-    sample_spd = rospy.get_param("~sampling/speed", 0.5) # metres per second
+    sample_spd = rospy.get_param("~sampling/speed", 5.0) # metres per second
     sample_dt = rospy.get_param("~sampling/dt", 0.2)     # seconds
     sample_dist = sample_spd*sample_dt # metres
 

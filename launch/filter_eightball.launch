@@ -20,7 +20,7 @@
       <rosparam file="$(find balloon_filter)/config/filter_params.yaml" command="load" />
 
       <!-- Subscribers -->
-      <remap from="~balloon_detections" to="object_detect/detected_objects" />
+      <remap from="~balloon_detections" to="object_detect/detected_balls" />
 
       <!-- Publishers -->
       <remap from="~balloon_chosen_out" to="~balloon_chosen_out" />
