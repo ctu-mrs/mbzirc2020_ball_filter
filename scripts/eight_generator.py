@@ -98,7 +98,7 @@ def main():
 
     # parameters of transformation of the eight pattern
     pattern_rotation_ypr = rospy.get_param("~pattern/rotation_ypr", [0.0, 0.1, 0.1])          # radians
-    pattern_translation = rospy.get_param("~pattern/translation", [5.0, -3.0, 8.0])           # metres
+    pattern_translation = rospy.get_param("~pattern/translation", [5.0, -3.0, 9.0])           # metres
 
     # parameters of the sampling
     sample_spd = rospy.get_param("~sampling/speed", 5.0) # metres per second

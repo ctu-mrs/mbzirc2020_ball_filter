@@ -10,15 +10,15 @@ extreme:
 
     ascending:
       speed: 8.0
-      acceleration: 3.0
-      jerk: 3.0
-      snap: 10.0
+      acceleration: 2.0
+      jerk: 5.0
+      snap: 8.0
 
     descending:
       speed: 8.0
-      acceleration: 3.0
-      jerk: 3.0
-      snap: 10.0
+      acceleration: 2.0
+      jerk: 5.0
+      snap: 8.0
 
   yaw:
     speed: 2.0
@@ -42,4 +42,4 @@ constraint_management:
   # those gains will be used automatically when a localization mode switches
   # and the current gains are not in the allowed list (next paragraphs)
   fallback_constraints:
-    GPS: "extreme"
+    GPS: "fast"

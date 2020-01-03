@@ -327,7 +327,7 @@ namespace balloon_filter
       else
       {
         const double dt = (cur_stamp - prev_stamp).toSec();
-        assert(dt > 0.0);
+        assert(dt >= 0.0);
         const UKF::u_t u = construct_u(plane_theta, ball_speed_at_time(cur_stamp));
         const UKF::Q_t Q = dt * m_process_std.asDiagonal();
 
