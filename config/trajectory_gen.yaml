@@ -1,16 +1,16 @@
 
 # parameters of the pattern
 pattern:
-  radius:        1.5 # metres
-  width:         8   # metres
-  lin_cutoff:    1.0 # metres, how much of the radius will be cut-off in favour of the linear segment
+  radius:        10.5 # metres
+  width:         55   # metres
+  lin_cutoff:    5.0 # metres, how much of the radius will be cut-off in favour of the linear segment
   # parameters of transformation of the eight pattern
-  rotation_ypr:  [1.0, 2.0, 0.0] # radians
-  translation:   [15.0, -3.0, 8.0] # metres
+  rotation_ypr:  [0.0, 0.1, 0.1] # radians
+  translation:   [5.0, -3.0, 9.0] # metres
 
 # parameters of the sampling
 sampling:
-  speed:  1.5 # metres per second
+  speed:  5.0 # metres per second
   dt:     0.2 # seconds
 
 plot_result: false # whether to plot the resulting trajectory using matplotlib

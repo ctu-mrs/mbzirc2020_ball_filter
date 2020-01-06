@@ -246,7 +246,7 @@ namespace balloon_filter
       double ball_speed_at_time(const ros::Time& timestamp);
 
       /* UKF related methods //{ */
-      UKF::statecov_t predict_ukf_estimate(const ros::Time& to_stamp, const theta_t& plane_theta);
+      std::optional<UKF::statecov_t> predict_ukf_estimate(const ros::Time& to_stamp, const theta_t& plane_theta);
       bool update_ukf_estimate(const std::vector<pos_cov_t>& measurements, const ros::Time& stamp, pos_cov_t& used_meas, const theta_t& plane_theta);
       UKF::statecov_t estimate_ukf_initial_state(const theta_t& plane_theta);
       bool init_ukf_estimate(const ros::Time& stamp, pos_cov_t& used_meas, const theta_t& plane_theta);

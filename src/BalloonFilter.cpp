@@ -90,14 +90,21 @@ namespace balloon_filter
         std_msgs::Header header;
         header.frame_id = m_world_frame_id;
         header.stamp = ros::Time::now();
-        auto cur_estimate = predict_ukf_estimate(header.stamp, plane_theta);
-        Eigen::IOFormat short_fmt(3);
-        cur_estimate.x.format(short_fmt);
-        const auto cur_pos_cov = get_pos_cov(cur_estimate);
-        m_pub_chosen_balloon.publish(to_output_message(cur_pos_cov, header));
-        ROS_WARN_STREAM_THROTTLE(MSG_THROTTLE, "[UKF]: Current UKF prediction:" << std::endl
-                                                                                << "[\tx\t\ty\t\tz\t\tyaw\t\tspd\t\tcur\t]" << std::endl
-                                                                                << "[" << cur_estimate.x.transpose() << "]");
+        const auto cur_estimate_opt = predict_ukf_estimate(header.stamp, plane_theta);
+        if (cur_estimate_opt.has_value())
+        {
+          const auto cur_estimate = cur_estimate_opt.value();
+          Eigen::IOFormat short_fmt(3);
+          cur_estimate.x.format(short_fmt);
+          const auto cur_pos_cov = get_pos_cov(cur_estimate);
+          m_pub_chosen_balloon.publish(to_output_message(cur_pos_cov, header));
+          ROS_WARN_STREAM_THROTTLE(MSG_THROTTLE, "[UKF]: Current UKF prediction:" << std::endl
+                                                                                  << "[\tx\t\ty\t\tz\t\tyaw\t\tspd\t\tcur\t]" << std::endl
+                                                                                  << "[" << cur_estimate.x.transpose() << "]");
+        } else
+        {
+          ROS_WARN("[UKF]: Failed to predict states (negative dt?).");
+        }
       }
     }
   }
@@ -215,15 +222,16 @@ namespace balloon_filter
   // --------------------------------------------------------------
 
   /* predict_ukf_estimate() method //{ */
-  UKF::statecov_t BalloonFilter::predict_ukf_estimate(const ros::Time& to_stamp, const theta_t& plane_theta)
+  std::optional<UKF::statecov_t> BalloonFilter::predict_ukf_estimate(const ros::Time& to_stamp, const theta_t& plane_theta)
   {
     const double dt = (to_stamp - m_ukf_last_update).toSec();
+    if (dt <= 0.0)
+      return std::nullopt;
+
     const UKF::Q_t Q = dt * m_process_std.asDiagonal();
-
     const UKF::u_t u = construct_u(plane_theta, ball_speed_at_time(to_stamp));
-    auto ukf_estimate = m_ukf_estimate;
 
-    const auto ret = m_ukf.predict(ukf_estimate, u, Q, dt);
+    const auto ret = m_ukf.predict(m_ukf_estimate, u, Q, dt);
     return ret;
   }
   //}
@@ -242,6 +250,9 @@ namespace balloon_filter
       ROS_INFO_THROTTLE(MSG_THROTTLE, "[UKF]: Updating current estimate using point [%.2f, %.2f, %.2f]", closest_meas.pos.x(), closest_meas.pos.y(),
                         closest_meas.pos.z());
       const double dt = (stamp - ukf_last_update).toSec();
+      if (dt <= 0.0)
+        return false;
+
       const UKF::u_t u = construct_u(plane_theta, ball_speed_at_time(stamp));
       const UKF::Q_t Q = dt * m_process_std.asDiagonal();
 
@@ -327,7 +338,9 @@ namespace balloon_filter
       else
       {
         const double dt = (cur_stamp - prev_stamp).toSec();
-        assert(dt >= 0.0);
+        /* assert(dt >= 0.0); */
+        if (dt <= 0.0)
+          continue;
         const UKF::u_t u = construct_u(plane_theta, ball_speed_at_time(cur_stamp));
         const UKF::Q_t Q = dt * m_process_std.asDiagonal();
 

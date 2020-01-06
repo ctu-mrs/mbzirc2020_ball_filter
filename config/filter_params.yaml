@@ -3,7 +3,7 @@ gating_distance: 20.0 # meters
 max_time_since_update: 2.0 # seconds
 min_updates_to_confirm: 10
 
-ball_speed1: 8.0 # metres per second
+ball_speed1: 5.0 # metres per second
 ball_speed2: 5.0 # metres per second
 ball_speed_change_after: 480.0 # seconds (480s is 8min)
 
@@ -14,10 +14,10 @@ ukf:
   init_history_duration: 10.0 # seconds
 
 process_std:
-  position: 0.5
+  position: 5.0
   yaw: 0.01
   speed: 0.0001
-  curvature: 1.0
+  curvature: 0.001
 
 init_std:
   yaw: 2.0
