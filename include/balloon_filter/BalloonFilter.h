@@ -30,6 +30,7 @@
 #include <mrs_lib/subscribe_handler.h>
 #include <mrs_lib/DynamicReconfigureMgr.h>
 #include <mrs_lib/geometry_utils.h>
+#include <mrs_lib/mutex.h>
 
 // Boost
 #include <boost/circular_buffer.hpp>
@@ -185,11 +186,6 @@ namespace balloon_filter
       std::mutex m_rheiv_theta_mtx;
       bool m_rheiv_theta_valid;
       rheiv::theta_t m_rheiv_theta;
-      std::tuple<bool, rheiv::theta_t> get_rheiv_status()
-      {
-        std::scoped_lock lck(m_rheiv_theta_mtx);
-        return {m_rheiv_theta_valid, m_rheiv_theta};
-      };
       
       //}
       
@@ -203,11 +199,6 @@ namespace balloon_filter
       UKF::statecov_t m_ukf_estimate;
       ros::Time m_ukf_last_update;
       int m_ukf_n_updates;
-      std::tuple<bool, UKF::statecov_t, ros::Time, int> get_ukf_status()
-      {
-        std::scoped_lock lck(m_ukf_estimate_mtx);
-        return {m_ukf_estimate_exists, m_ukf_estimate, m_ukf_last_update, m_ukf_n_updates};
-      };
       
       //}
 
@@ -248,7 +239,7 @@ namespace balloon_filter
       /* UKF related methods //{ */
       std::optional<UKF::statecov_t> predict_ukf_estimate(const ros::Time& to_stamp, const theta_t& plane_theta);
       bool update_ukf_estimate(const std::vector<pos_cov_t>& measurements, const ros::Time& stamp, pos_cov_t& used_meas, const theta_t& plane_theta);
-      UKF::statecov_t estimate_ukf_initial_state(const theta_t& plane_theta);
+      std::optional<UKF::statecov_t> estimate_ukf_initial_state(const theta_t& plane_theta);
       bool init_ukf_estimate(const ros::Time& stamp, pos_cov_t& used_meas, const theta_t& plane_theta);
       std::vector<std::pair<UKF::x_t, ros::Time>> predict_states(const UKF::statecov_t initial_statecov, const ros::Time& initial_timestamp, const theta_t& plane_theta, const double prediction_horizon, const double prediction_step);
       //}
