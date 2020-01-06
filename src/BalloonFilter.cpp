@@ -193,6 +193,23 @@ namespace balloon_filter
   }
   //}
 
+  /* /1* lpf_loop() method //{ *1/ */
+  /* void BalloonFilter::lpf_loop([[maybe_unused]] const ros::TimerEvent& evt) */
+  /* { */
+  /*   const auto [ukf_estimate_exists, ukf_estimate] = mrs_lib::get_mutexed(m_ukf_estimate_mtx, m_ukf_estimate_exists, m_ukf_estimate); */
+
+  /*   if (!ukf_estimate_exists) */
+  /*   const double curvature = m_ukf_estimate.x(ukf::x::c); */
+  /*   static double curv_filtered = curvature; */
+
+  /*   mrs_msgs::Float64Stamped msg; */
+  /*   msg.header.stamp = ros::Time::now(); */
+  /*   msg.value = curv_filtered; */
+
+  /*   m_pub_lpf.publish(msg); */
+  /* } */
+  /* //} */
+
   /* prediction_loop() method //{ */
   void BalloonFilter::prediction_loop([[maybe_unused]] const ros::TimerEvent& evt)
   {
@@ -1027,14 +1044,17 @@ namespace balloon_filter
 
     /* publishers //{ */
 
-    m_pub_chosen_balloon = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("filtered_position", 1);
-    m_pub_used_meas = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("detection_used", 1);
-    m_pub_ball_prediction = nh.advertise<balloon_filter::BallPrediction>("ball_prediction", 1);
-    m_pub_pred_path_dbg = nh.advertise<nav_msgs::Path>("predicted_path", 1);
     m_pub_plane_dbg = nh.advertise<visualization_msgs::MarkerArray>("fitted_plane_marker", 1);
     m_pub_plane_dbg2 = nh.advertise<geometry_msgs::PoseStamped>("fitted_plane_pose", 1);
     m_pub_used_pts = nh.advertise<sensor_msgs::PointCloud2>("fit_points", 1);
     m_pub_fitted_plane = nh.advertise<balloon_filter::PlaneStamped>("fitted_plane", 1);
+
+    m_pub_chosen_balloon = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("filtered_position", 1);
+    m_pub_used_meas = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("detection_used", 1);
+    m_pub_ball_prediction = nh.advertise<balloon_filter::BallPrediction>("ball_prediction", 1);
+    m_pub_pred_path_dbg = nh.advertise<nav_msgs::Path>("predicted_path", 1);
+
+    m_pub_lpf = nh.advertise<mrs_msgs::Float64Stamped>("low_pass_filtered", 1);
 
     //}
 

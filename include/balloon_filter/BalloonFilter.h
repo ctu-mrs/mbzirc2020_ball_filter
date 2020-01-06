@@ -23,6 +23,7 @@
 #include <nav_msgs/Path.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <sensor_msgs/point_cloud2_iterator.h>
+#include <mrs_msgs/Float64Stamped.h>
 
 // MRS stuff
 #include <mrs_lib/Profiler.h>
@@ -91,8 +92,9 @@ namespace balloon_filter
 
     private:
       const std::string m_node_name;
-      void main_loop([[maybe_unused]] const ros::TimerEvent& evt);
+      void main_loop(const ros::TimerEvent& evt);
       void rheiv_loop(const ros::TimerEvent& evt);
+      void lpf_loop(const ros::TimerEvent& evt);
       void prediction_loop(const ros::TimerEvent& evt);
 
     private:
@@ -138,14 +140,17 @@ namespace balloon_filter
       std::unique_ptr<tf2_ros::TransformListener> m_tf_listener_ptr;
       mrs_lib::SubscribeHandlerPtr<detections_t> m_sh_balloons;
 
-      ros::Publisher m_pub_chosen_balloon;
-      ros::Publisher m_pub_used_meas;
-      ros::Publisher m_pub_ball_prediction;
-      ros::Publisher m_pub_pred_path_dbg;
       ros::Publisher m_pub_plane_dbg;
       ros::Publisher m_pub_plane_dbg2;
       ros::Publisher m_pub_used_pts;
       ros::Publisher m_pub_fitted_plane;
+
+      ros::Publisher m_pub_chosen_balloon;
+      ros::Publisher m_pub_used_meas;
+      ros::Publisher m_pub_ball_prediction;
+      ros::Publisher m_pub_pred_path_dbg;
+
+      ros::Publisher m_pub_lpf;
 
       ros::ServiceServer m_reset_estimates_server;
 

@@ -13,16 +13,21 @@ ukf:
   prediction_period: 0.05 # seconds
   init_history_duration: 10.0 # seconds
 
-process_std:
-  position: 5.0
-  yaw: 0.01
-  speed: 0.0001
-  curvature: 0.001
+  process_std:
+    position: 5.0
+    yaw: 0.01
+    speed: 0.0001
+    curvature: 0.001
 
-init_std:
-  yaw: 2.0
-  speed: 1.0
-  curvature: 2.0
+  init_std:
+    yaw: 2.0
+    speed: 1.0
+    curvature: 2.0
+
+lpf:
+  rate: 25 # hertz
+  frequency:
+    curvature: 0.5 # hertz
 
 z_bounds: # measurements outside these bounds will be ignored
   min: 0  # metres
