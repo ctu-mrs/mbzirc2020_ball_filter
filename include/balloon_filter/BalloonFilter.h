@@ -207,6 +207,15 @@ namespace balloon_filter
       
       //}
 
+      // | ------------------ LPF related variables ----------------- |
+
+      /*  //{ */
+      
+      double m_lpf_cutoff_freq;
+      double m_curv_filt;
+      
+      //}
+
       // | --------------------- Other variables -------------------- |
 
     private:
@@ -241,6 +250,12 @@ namespace balloon_filter
       UKF::u_t construct_u(const theta_t& plane_theta, const double speed);
       double ball_speed_at_time(const ros::Time& timestamp);
 
+      /* RHEIV related methods //{ */
+      
+      rheiv::theta_t fit_plane(const boost::circular_buffer<pos_t>& points, const boost::circular_buffer<cov_t>& covs);
+      
+      //}
+
       /* UKF related methods //{ */
       std::optional<UKF::statecov_t> predict_ukf_estimate(const ros::Time& to_stamp, const theta_t& plane_theta);
       bool update_ukf_estimate(const std::vector<pos_cov_t>& measurements, const ros::Time& stamp, pos_cov_t& used_meas, const theta_t& plane_theta);
@@ -249,7 +264,12 @@ namespace balloon_filter
       std::vector<std::pair<UKF::x_t, ros::Time>> predict_states(const UKF::statecov_t initial_statecov, const ros::Time& initial_timestamp, const theta_t& plane_theta, const double prediction_horizon, const double prediction_step);
       //}
 
-      rheiv::theta_t fit_plane(const boost::circular_buffer<pos_t>& points, const boost::circular_buffer<cov_t>& covs);
+      /* LPF related methods //{ */
+      
+      double lpf_filter_states(const UKF::x_t& ukf_states, const double dt);
+      void lpf_reset(const UKF::x_t& ukf_states);
+      
+      //}
 
       pos_t get_pos(const UKF::x_t& x);
       pos_cov_t get_pos_cov(const UKF::statecov_t& statecov);

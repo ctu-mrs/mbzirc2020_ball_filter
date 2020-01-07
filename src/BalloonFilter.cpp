@@ -43,10 +43,16 @@ namespace balloon_filter
           // if all data is available, try to either initialize or update the UKF
           pos_cov_t used_meas;
           bool used_meas_valid = false;
+          const double dt = (balloons.header.stamp-m_ukf_last_update).toSec();
           if (m_ukf_estimate_exists)
+          {
             used_meas_valid = update_ukf_estimate(measurements, balloons.header.stamp, used_meas, plane_theta);
+          }
           else
+          {
             used_meas_valid = init_ukf_estimate(balloons.header.stamp, used_meas, plane_theta);
+            lpf_reset(m_ukf_estimate.x);
+          }
 
           if (used_meas_valid)
           {
@@ -57,6 +63,15 @@ namespace balloon_filter
             m_pub_used_meas.publish(to_output_message(used_meas, header));
             //}
           }
+
+          {
+            const auto filtered = lpf_filter_states(m_ukf_estimate.x, dt);
+            mrs_msgs::Float64Stamped msg;
+            msg.header = balloons.header;
+            msg.value = filtered;
+            m_pub_lpf.publish(msg);
+          }
+
         } else
         {
           if (!plane_theta_valid)
@@ -235,6 +250,18 @@ namespace balloon_filter
       m_pub_pred_path_dbg.publish(predicted_path);
       m_pub_ball_prediction.publish(message);
     }
+  }
+  //}
+
+  // --------------------------------------------------------------
+  // |                    RHEIV related methods                   |
+  // --------------------------------------------------------------
+
+  /* fit_plane() method //{ */
+  rheiv::theta_t BalloonFilter::fit_plane(const boost::circular_buffer<pos_t>& points, const boost::circular_buffer<cov_t>& covs)
+  {
+    const rheiv::theta_t ret = m_rheiv.fit(points.begin(), points.end(), covs.begin(), covs.end());
+    return ret;
   }
   //}
 
@@ -472,14 +499,29 @@ namespace balloon_filter
   //}
 
   // --------------------------------------------------------------
-  // |                    RHEIV related methods                   |
+  // |                     LPF related methods                    |
   // --------------------------------------------------------------
 
-  /* fit_plane() method //{ */
-  rheiv::theta_t BalloonFilter::fit_plane(const boost::circular_buffer<pos_t>& points, const boost::circular_buffer<cov_t>& covs)
+  /* filter_states() method //{ */
+  double BalloonFilter::lpf_filter_states(const UKF::x_t& ukf_states, const double dt)
   {
-    const rheiv::theta_t ret = m_rheiv.fit(points.begin(), points.end(), covs.begin(), covs.end());
-    return ret;
+    const double omega = M_PI_2*dt*m_lpf_cutoff_freq;
+    const double c = std::cos(omega);
+    const double alpha = c - 1.0 + std::sqrt(c*c - 4.0*c + 3.0);
+
+    const double curv_curr = ukf_states(ukf::x::c);
+    m_curv_filt = (1.0-alpha)*m_curv_filt + alpha*curv_curr;
+    ROS_INFO_THROTTLE(1.0, "[LPF]: Using cutoff frequency of %.2fHz for curvature, resulting in %.2f normalized frequency, %.2f its cosine and %.2f alpha.\ncurv_curr: %.2f\ncurv_filt: %.2f", m_lpf_cutoff_freq, omega, c, alpha, curv_curr, m_curv_filt);
+  
+    return m_curv_filt;
+  }
+  //}
+
+  /* lpf_reset() method //{ */
+  void BalloonFilter::lpf_reset(const UKF::x_t& ukf_states)
+  {
+    const double curv_curr = ukf_states(ukf::x::c);
+    m_curv_filt = curv_curr;
   }
   //}
 
@@ -968,14 +1010,16 @@ namespace balloon_filter
 
     m_prediction_horizon = cfg.ukf__prediction_horizon;
 
-    m_process_std(ukf::x::x) = m_process_std(ukf::x::y) = m_process_std(ukf::x::z) = cfg.process_std__position;
-    m_process_std(ukf::x::yaw) = cfg.process_std__yaw;
+    m_process_std(ukf::x::x) = m_process_std(ukf::x::y) = m_process_std(ukf::x::z) = cfg.ukf__process_std__position;
+    m_process_std(ukf::x::yaw) = cfg.ukf__process_std__yaw;
     /* m_process_std(ukf::x_s) = cfg.process_std__speed; */
-    m_process_std(ukf::x::c) = cfg.process_std__curvature;
+    m_process_std(ukf::x::c) = cfg.ukf__process_std__curvature;
 
-    m_init_std(ukf::x::yaw) = cfg.init_std__yaw;
+    m_init_std(ukf::x::yaw) = cfg.ukf__init_std__yaw;
     /* m_init_std(ukf::x_s) = cfg.init_std__speed; */
-    m_init_std(ukf::x::c) = cfg.init_std__curvature;
+    m_init_std(ukf::x::c) = cfg.ukf__init_std__curvature;
+
+    m_lpf_cutoff_freq = cfg.lpf__cutoff_freq__curvature;
   }
   //}
 
