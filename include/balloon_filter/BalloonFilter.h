@@ -241,6 +241,8 @@ namespace balloon_filter
       }
       //}
 
+      template <unsigned num_dimensions>
+      double calc_hyp_meas_loglikelihood(const pos_cov_t& hyp, const pos_cov_t& meas);
       cov_t msg2cov(const ros_cov_t& msg_cov);
       cov_t rotate_covariance(const cov_t& covariance, const cov_t& rotation);
       bool point_valid(const pos_t& pt);
@@ -249,6 +251,7 @@ namespace balloon_filter
       pos_t plane_origin(const theta_t& plane_theta, const pos_t& origin);
       UKF::u_t construct_u(const theta_t& plane_theta, const double speed);
       double ball_speed_at_time(const ros::Time& timestamp);
+      std::tuple<pos_cov_t, double> find_most_likely_association(const pos_cov_t& prev_pt, const std::vector<pos_cov_t>& measurements, const double expected_speed, const double dt);
 
       /* RHEIV related methods //{ */
       

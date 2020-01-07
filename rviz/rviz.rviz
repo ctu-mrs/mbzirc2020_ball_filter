@@ -8,12 +8,11 @@ Panels:
         - /frames, grids etc.1/TF1/Frames1
         - /uav1 odom1/Status1
         - /uav1 trajectory1/Status1
-        - /ball detection1/detected balls1/Status1
         - /ball filtering1/plane fitting1
         - /ball filtering1/plane fitting1/plane fit points1
         - /ball GT1/Status1
       Splitter Ratio: 0.5
-    Tree Height: 596
+    Tree Height: 573
   - Class: rviz/Selection
     Name: Selection
   - Class: rviz/Tool Properties
@@ -134,49 +133,46 @@ Visualization Manager:
               Value: true
             uav2/utm_origin:
               Value: true
-            world:
-              Value: true
           Marker Scale: 1
           Name: TF
           Show Arrows: true
           Show Axes: true
           Show Names: true
           Tree:
-            world:
-              common_origin:
-                uav1/fcu:
-                  uav1/fcu_untilted:
+            common_origin:
+              uav1/fcu:
+                uav1/fcu_untilted:
+                  {}
+                uav1/garmin:
+                  {}
+                uav1/gps_origin:
+                  uav1/utm_origin:
                     {}
-                  uav1/garmin:
-                    {}
-                  uav1/gps_origin:
-                    uav1/utm_origin:
+                uav1/local_origin:
+                  {}
+                uav1/rs_d435/link:
+                  uav1/rs_d435/aligned_depth_to_color:
+                    uav1/rs_d435/aligned_depth_to_color_optical:
                       {}
-                  uav1/local_origin:
-                    {}
-                  uav1/rs_d435/link:
-                    uav1/rs_d435/aligned_depth_to_color:
-                      uav1/rs_d435/aligned_depth_to_color_optical:
-                        {}
-                    uav1/rs_d435/color:
-                      uav1/rs_d435/color_optical:
-                        {}
-                    uav1/rs_d435/infra1:
-                      uav1/rs_d435/infra1_optical:
-                        {}
-                    uav1/rs_d435/infra2:
-                      uav1/rs_d435/infra2_optical:
-                        {}
-                uav2/fcu:
-                  uav2/fcu_untilted:
-                    {}
-                  uav2/garmin:
-                    {}
-                  uav2/gps_origin:
-                    uav2/utm_origin:
+                  uav1/rs_d435/color:
+                    uav1/rs_d435/color_optical:
                       {}
-                  uav2/local_origin:
+                  uav1/rs_d435/infra1:
+                    uav1/rs_d435/infra1_optical:
+                      {}
+                  uav1/rs_d435/infra2:
+                    uav1/rs_d435/infra2_optical:
+                      {}
+              uav2/fcu:
+                uav2/fcu_untilted:
+                  {}
+                uav2/garmin:
+                  {}
+                uav2/gps_origin:
+                  uav2/utm_origin:
                     {}
+                uav2/local_origin:
+                  {}
           Update Interval: 0
           Value: true
       Enabled: true
@@ -269,7 +265,7 @@ Visualization Manager:
             Value: true
           Axis: Z
           Channel Name: intensity
-          Class: rviz/PointCloud
+          Class: rviz/PointCloud2
           Color: 255; 0; 0
           Color Transformer: FlatColor
           Decay Time: 0
@@ -282,7 +278,7 @@ Visualization Manager:
           Name: detected balls
           Position Transformer: XYZ
           Queue Size: 10
-          Selectable: true
+          Selectable: false
           Size (Pixels): 3
           Size (m): 0.07500000298023224
           Style: Spheres
@@ -495,33 +491,33 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/XYOrbit
-      Distance: 47.134803771972656
+      Distance: 39.57415771484375
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -0.7481486797332764
-        Y: -26.459617614746094
-        Z: -3.0517578125e-5
+        X: -2.5446879863739014
+        Y: -29.016584396362305
+        Z: -1.0019619367085397e-5
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.5553970336914062
+      Pitch: 0.5553973913192749
       Target Frame: <Fixed Frame>
       Value: XYOrbit (rviz)
-      Yaw: 4.428576946258545
+      Yaw: 4.008578300476074
     Saved: ~
 Window Geometry:
   Displays:
     collapsed: false
-  Height: 1030
+  Height: 1000
   Hide Left Dock: false
   Hide Right Dock: true
-  QMainWindow State: 000000ff00000000fd0000000400000000000001560000036cfc020000000afb0000001200530065006c0065006300740069006f006e00000001e10000009b0000005c00fffffffb0000001e0054006f006f006c002000500072006f007000650072007400690065007302000001ed000001df00000185000000a3fb000000120056006900650077007300200054006f006f02000001df000002110000018500000122fb000000200054006f006f006c002000500072006f0070006500720074006900650073003203000002880000011d000002210000017afb000000100044006900730070006c006100790073010000003b0000028f000000c700fffffffb0000002000730065006c0065006300740069006f006e00200062007500660066006500720200000138000000aa0000023a00000294fb00000014005700690064006500530074006500720065006f02000000e6000000d2000003ee0000030bfb0000000c004b0069006e0065006300740200000186000001060000030c00000261fb000000160064006500620075006700200069006d00610067006501000002d0000000d70000001600fffffffb0000001600640065006200750067005f0069006d0061006700650200000a030000016100000335000001f1000000010000010f0000036cfc0200000003fb0000001e0054006f006f006c002000500072006f00700065007200740069006500730100000041000000780000000000000000fb0000000a00560069006500770073000000003b0000036c000000a000fffffffb0000001200530065006c0065006300740069006f006e010000025a000000b200000000000000000000000200000490000000a9fc0100000001fb0000000a00560069006500770073030000004e00000080000002e10000019700000003000006900000003efc0100000002fb0000000800540069006d00650100000000000006900000023f00fffffffb0000000800540069006d00650100000000000004500000000000000000000005340000036c00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd0000000400000000000001560000034efc020000000afb0000001200530065006c0065006300740069006f006e00000001e10000009b0000005c00fffffffb0000001e0054006f006f006c002000500072006f007000650072007400690065007302000001ed000001df00000185000000a3fb000000120056006900650077007300200054006f006f02000001df000002110000018500000122fb000000200054006f006f006c002000500072006f0070006500720074006900650073003203000002880000011d000002210000017afb000000100044006900730070006c006100790073010000003b00000278000000c700fffffffb0000002000730065006c0065006300740069006f006e00200062007500660066006500720200000138000000aa0000023a00000294fb00000014005700690064006500530074006500720065006f02000000e6000000d2000003ee0000030bfb0000000c004b0069006e0065006300740200000186000001060000030c00000261fb000000160064006500620075006700200069006d00610067006501000002b9000000d00000001600fffffffb0000001600640065006200750067005f0069006d0061006700650200000a030000016100000335000001f1000000010000010f0000036cfc0200000003fb0000001e0054006f006f006c002000500072006f00700065007200740069006500730100000041000000780000000000000000fb0000000a00560069006500770073000000003b0000036c000000a000fffffffb0000001200530065006c0065006300740069006f006e010000025a000000b200000000000000000000000200000490000000a9fc0100000001fb0000000a00560069006500770073030000004e00000080000002e10000019700000003000003300000003efc0100000002fb0000000800540069006d00650100000000000003300000023f00fffffffb0000000800540069006d00650100000000000004500000000000000000000001d40000034e00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Selection:
     collapsed: false
   Time:
@@ -530,8 +526,8 @@ Window Geometry:
     collapsed: false
   Views:
     collapsed: true
-  Width: 1680
-  X: 3840
-  Y: 20
+  Width: 816
+  X: 3852
+  Y: 32
   debug image:
     collapsed: false

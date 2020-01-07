@@ -528,6 +528,41 @@ namespace balloon_filter
   // --------------------------------------------------------------
   // |                       Helper methods                       |
   // --------------------------------------------------------------
+  
+  /* calc_hyp_meas_loglikelihood() method //{ */
+  template <unsigned num_dimensions>
+  double BalloonFilter::calc_hyp_meas_loglikelihood(const pos_cov_t& hyp, const pos_cov_t& meas)
+  {
+    const pos_t inn = meas.pos - hyp.pos;
+    const cov_t inn_cov = meas.cov + hyp.cov;
+    constexpr double dylog2pi = num_dimensions*log(2*M_PI);
+    const double a = inn.transpose() * inn_cov.inverse() * inn;
+    const double b = log(inn_cov.determinant());
+    return - (a + b + dylog2pi)/2.0;
+  }
+  //}
+
+  /* find_most_likely_association() method //{ */
+  std::tuple<pos_cov_t, double> BalloonFilter::find_most_likely_association(const pos_cov_t& prev_pt, const std::vector<pos_cov_t>& measurements, const double expected_speed, const double dt)
+  {
+    pos_cov_t most_likely;
+    double max_loglikelihood = std::numeric_limits<double>::lowest();
+    for (const auto& meas : measurements)
+    {
+      const auto diff_vec = meas.pos - prev_pt.pos;
+      const auto diff_vec_exp = diff_vec.normalized()*dt*expected_speed;
+      const auto err_vec = diff_vec - diff_vec_exp;
+      const pos_cov_t err_pos_cov {err_vec, meas.cov};
+      const double loglikelihood = calc_hyp_meas_loglikelihood<3>(prev_pt, err_pos_cov);
+      if (loglikelihood > max_loglikelihood)
+      {
+        max_loglikelihood = loglikelihood;
+        most_likely = meas;
+      }
+    }
+    return {most_likely, max_loglikelihood};
+  }
+  //}
 
   /* get_pos() method //{ */
   pos_t BalloonFilter::get_pos(const UKF::x_t& x)

@@ -27,7 +27,7 @@ ukf:
 lpf:
   rate: 25 # hertz
   cutoff_freq:
-    curvature: 1.0 # hertz
+    curvature: 0.5 # hertz
 
 z_bounds: # measurements outside these bounds will be ignored
   min: 0  # metres
