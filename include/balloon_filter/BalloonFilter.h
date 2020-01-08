@@ -80,6 +80,10 @@ namespace balloon_filter
     cov_t cov;
   };
 
+  using mrs_lib::get_mutexed;
+  using mrs_lib::set_mutexed;
+  using mrs_lib::get_set_mutexed;
+
   /* //{ class BalloonFilter */
 
   class BalloonFilter : public nodelet::Nodelet
@@ -116,7 +120,7 @@ namespace balloon_filter
       int m_rheiv_visualization_size;
 
       ros::Duration m_ukf_init_history_duration;
-      double m_gating_distance;
+      double m_loglikelihood_threshold;
       double m_max_time_since_update;
       double m_min_updates_to_confirm;
       double m_z_bounds_min;
@@ -218,6 +222,9 @@ namespace balloon_filter
 
       // | --------------------- Other variables -------------------- |
 
+      std::vector<pos_cov_t> m_prev_measurements;
+      ros::Time m_prev_measurements_stamp;
+
     private:
 
       // --------------------------------------------------------------
@@ -252,6 +259,7 @@ namespace balloon_filter
       UKF::u_t construct_u(const theta_t& plane_theta, const double speed);
       double ball_speed_at_time(const ros::Time& timestamp);
       std::tuple<pos_cov_t, double> find_most_likely_association(const pos_cov_t& prev_pt, const std::vector<pos_cov_t>& measurements, const double expected_speed, const double dt);
+      std::optional<pos_cov_t> find_speed_compliant_measurement(const std::vector<pos_cov_t>& prev_meass, const std::vector<pos_cov_t>& measurements, const double expected_speed, const double dt, const double loglikelihood_threshold);
 
       /* RHEIV related methods //{ */
       
@@ -261,15 +269,15 @@ namespace balloon_filter
 
       /* UKF related methods //{ */
       std::optional<UKF::statecov_t> predict_ukf_estimate(const ros::Time& to_stamp, const theta_t& plane_theta);
-      bool update_ukf_estimate(const std::vector<pos_cov_t>& measurements, const ros::Time& stamp, pos_cov_t& used_meas, const theta_t& plane_theta);
+      void update_ukf_estimate(const pos_cov_t& measurement, const ros::Time& stamp, const theta_t& plane_theta);
       std::optional<UKF::statecov_t> estimate_ukf_initial_state(const theta_t& plane_theta);
-      bool init_ukf_estimate(const ros::Time& stamp, pos_cov_t& used_meas, const theta_t& plane_theta);
+      void init_ukf_estimate(const ros::Time& stamp, const theta_t& plane_theta);
       std::vector<std::pair<UKF::x_t, ros::Time>> predict_states(const UKF::statecov_t initial_statecov, const ros::Time& initial_timestamp, const theta_t& plane_theta, const double prediction_horizon, const double prediction_step);
       //}
 
       /* LPF related methods //{ */
       
-      double lpf_filter_states(const UKF::x_t& ukf_states, const double dt);
+      double lpf_filter_states(const UKF::x_t& ukf_states, const ros::Time& stamp);
       void lpf_reset(const UKF::x_t& ukf_states);
       
       //}
@@ -287,8 +295,8 @@ namespace balloon_filter
       balloon_filter::Plane to_output_message(const rheiv::theta_t& plane_theta);
 
       pos_t get_cur_mav_pos();
-      bool find_closest_to(const std::vector<pos_cov_t>& measurements, const pos_t& to_position, pos_cov_t& closest_out, bool use_gating = false);
-      bool find_closest(const std::vector<pos_cov_t>& measurements, pos_cov_t& closest_out);
+      /* bool find_closest_to(const std::vector<pos_cov_t>& measurements, const pos_t& to_position, pos_cov_t& closest_out, bool use_gating = false); */
+      /* bool find_closest(const std::vector<pos_cov_t>& measurements, pos_cov_t& closest_out); */
 
       std::vector<pos_cov_t> message_to_positions(const detections_t& balloon_msg);
 

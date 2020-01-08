@@ -19,12 +19,40 @@ namespace balloon_filter
 
         // transform the message to usable measurement format
         std::vector<pos_cov_t> measurements = message_to_positions(balloons);
+        if (m_prev_measurements.empty())
+        {
+          m_prev_measurements = measurements;
+          m_prev_measurements_stamp = balloons.header.stamp;
+          return;
+        }
 
-        for (const auto& meas : measurements)
-          add_rheiv_data(meas.pos, meas.cov, balloons.header.stamp);
+        const double dt = (balloons.header.stamp - m_prev_measurements_stamp).toSec();
+        const auto chosen_meas_opt = find_speed_compliant_measurement(m_prev_measurements, measurements, ball_speed_at_time(balloons.header.stamp), dt, m_loglikelihood_threshold);
+        if (!chosen_meas_opt.has_value())
+        {
+          ROS_WARN_THROTTLE(1.0, "[BalloonFilter]: No detections complied to the expected speed, skipping.");
+          m_prev_measurements = measurements;
+          m_prev_measurements_stamp = balloons.header.stamp;
+          return;
+        }
+        const auto chosen_meas = chosen_meas_opt.value();
+        m_prev_measurements.clear();
+        m_prev_measurements.push_back(chosen_meas);
+        m_prev_measurements_stamp = balloons.header.stamp;
+
+        /* publish the used measurement for debugging and visualisation purposes //{ */
+        {
+          std_msgs::Header header;
+          header.frame_id = m_world_frame_id;
+          header.stamp = balloons.header.stamp;
+          m_pub_used_meas.publish(to_output_message(chosen_meas, header));
+        }
+        //}
+
+        add_rheiv_data(chosen_meas.pos, chosen_meas.cov, balloons.header.stamp);
 
         // copy the latest plane fit
-        const auto [plane_theta_valid, plane_theta] = mrs_lib::get_mutexed(m_rheiv_theta_mtx, m_rheiv_theta_valid, m_rheiv_theta);
+        const auto [plane_theta_valid, plane_theta] = get_mutexed(m_rheiv_theta_mtx, m_rheiv_theta_valid, m_rheiv_theta);
 
         if (plane_theta_valid && (m_pub_plane_dbg.getNumSubscribers() > 0 || m_pub_plane_dbg2.getNumSubscribers()))
         {
@@ -38,39 +66,29 @@ namespace balloon_filter
         }
 
         // check if we have all data that is needed
-        if (!measurements.empty() && plane_theta_valid)
+        if (plane_theta_valid)
         {
-          // if all data is available, try to either initialize or update the UKF
-          pos_cov_t used_meas;
-          bool used_meas_valid = false;
-          const double dt = (balloons.header.stamp-m_ukf_last_update).toSec();
           if (m_ukf_estimate_exists)
           {
-            used_meas_valid = update_ukf_estimate(measurements, balloons.header.stamp, used_meas, plane_theta);
+            update_ukf_estimate(chosen_meas, balloons.header.stamp, plane_theta);
           }
           else
           {
-            used_meas_valid = init_ukf_estimate(balloons.header.stamp, used_meas, plane_theta);
+            init_ukf_estimate(balloons.header.stamp, plane_theta);
             lpf_reset(m_ukf_estimate.x);
           }
 
-          if (used_meas_valid)
+          /* publish the filtered curvature //{ */
+          
           {
-            /* publish the used measurement for debugging and visualisation purposes //{ */
-            std_msgs::Header header;
-            header.frame_id = m_world_frame_id;
-            header.stamp = balloons.header.stamp;
-            m_pub_used_meas.publish(to_output_message(used_meas, header));
-            //}
-          }
-
-          {
-            const auto filtered = lpf_filter_states(m_ukf_estimate.x, dt);
+            const auto filtered = lpf_filter_states(m_ukf_estimate.x, balloons.header.stamp);
             mrs_msgs::Float64Stamped msg;
             msg.header = balloons.header;
             msg.value = filtered;
             m_pub_lpf.publish(msg);
           }
+          
+          //}
 
         } else
         {
@@ -92,14 +110,15 @@ namespace balloon_filter
         ROS_INFO_THROTTLE(MSG_THROTTLE, "[%s]: Empty detections message received", m_node_name.c_str());
       }
     }
-    if ((ros::Time::now() - m_ukf_last_update).toSec() >= m_max_time_since_update)
+    const auto ukf_last_update = get_mutexed(m_ukf_estimate_mtx, m_ukf_last_update);
+    if ((ros::Time::now() - ukf_last_update).toSec() >= m_max_time_since_update)
     {
       reset_ukf_estimate();
     }
 
     if (m_ukf_estimate_exists && m_ukf_n_updates > m_min_updates_to_confirm)
     {
-      const auto [plane_theta_valid, plane_theta] = mrs_lib::get_mutexed(m_rheiv_theta_mtx, m_rheiv_theta_valid, m_rheiv_theta);
+      const auto [plane_theta_valid, plane_theta] = get_mutexed(m_rheiv_theta_mtx, m_rheiv_theta_valid, m_rheiv_theta);
       if (plane_theta_valid)
       {
         std_msgs::Header header;
@@ -129,10 +148,10 @@ namespace balloon_filter
   void BalloonFilter::rheiv_loop([[maybe_unused]] const ros::TimerEvent& evt)
   {
     // threadsafe copy the data to be fitted with the plane
-    const auto [rheiv_pts, rheiv_covs, rheiv_new_data, rheiv_last_data_update] = mrs_lib::get_set_mutexed(m_rheiv_data_mtx,
+    const auto [rheiv_pts, rheiv_covs, rheiv_new_data, rheiv_last_data_update] = get_set_mutexed(m_rheiv_data_mtx,
         std::forward_as_tuple(m_rheiv_pts, m_rheiv_covs, m_rheiv_new_data, m_rheiv_last_data_update),
-        std::forward_as_tuple(m_rheiv_new_data),
-        std::make_tuple(false)
+        std::make_tuple(false),
+        std::forward_as_tuple(m_rheiv_new_data)
         );
 
     if ((ros::Time::now() - rheiv_last_data_update).toSec() >= m_max_time_since_update)
@@ -272,7 +291,8 @@ namespace balloon_filter
   /* predict_ukf_estimate() method //{ */
   std::optional<UKF::statecov_t> BalloonFilter::predict_ukf_estimate(const ros::Time& to_stamp, const theta_t& plane_theta)
   {
-    const double dt = (to_stamp - m_ukf_last_update).toSec();
+    const auto ukf_last_update = mrs_lib::get_mutexed(m_ukf_estimate_mtx, m_ukf_last_update);
+    const double dt = (to_stamp - ukf_last_update).toSec();
     if (dt < 0.0)
       return std::nullopt;
 
@@ -285,44 +305,28 @@ namespace balloon_filter
   //}
 
   /* update_ukf_estimate() method //{ */
-  bool BalloonFilter::update_ukf_estimate(const std::vector<pos_cov_t>& measurements, const ros::Time& stamp, pos_cov_t& used_meas, const theta_t& plane_theta)
+  void BalloonFilter::update_ukf_estimate(const pos_cov_t& measurement, const ros::Time& stamp, const theta_t& plane_theta)
   {
     auto [ukf_estimate_exists, ukf_estimate, ukf_last_update, ukf_n_updates] = mrs_lib::get_mutexed(m_ukf_estimate_mtx, m_ukf_estimate_exists, m_ukf_estimate, m_ukf_last_update, m_ukf_n_updates);
 
-    pos_cov_t closest_meas;
-    const auto cur_pos = get_pos(ukf_estimate.x);
-    bool meas_valid = find_closest_to(measurements, cur_pos, closest_meas, true);
+    ROS_INFO_THROTTLE(MSG_THROTTLE, "[UKF]: Updating current estimate using point [%.2f, %.2f, %.2f]", measurement.pos.x(), measurement.pos.y(),
+                      measurement.pos.z());
+    const double dt = (stamp - ukf_last_update).toSec();
+    if (dt < 0.0)
+      return;
 
-    if (meas_valid)
-    {
-      ROS_INFO_THROTTLE(MSG_THROTTLE, "[UKF]: Updating current estimate using point [%.2f, %.2f, %.2f]", closest_meas.pos.x(), closest_meas.pos.y(),
-                        closest_meas.pos.z());
-      const double dt = (stamp - ukf_last_update).toSec();
-      if (dt < 0.0)
-        return false;
+    const UKF::u_t u = construct_u(plane_theta, ball_speed_at_time(stamp));
+    const UKF::Q_t Q = dt * m_process_std.asDiagonal();
 
-      const UKF::u_t u = construct_u(plane_theta, ball_speed_at_time(stamp));
-      const UKF::Q_t Q = dt * m_process_std.asDiagonal();
+    ukf_estimate = m_ukf.predict(ukf_estimate, u, Q, dt);
+    ukf_estimate = m_ukf.correct(ukf_estimate, measurement.pos, measurement.cov);
+    ukf_last_update = stamp;
+    ukf_n_updates++;
+    ukf_estimate_exists = true;
 
-      ukf_estimate = m_ukf.predict(ukf_estimate, u, Q, dt);
-      ukf_estimate = m_ukf.correct(ukf_estimate, closest_meas.pos, closest_meas.cov);
-      ukf_last_update = stamp;
-      ukf_n_updates++;
-      used_meas = closest_meas;
-      ukf_estimate_exists = true;
-
-      {
-        std::scoped_lock lck(m_ukf_estimate_mtx);
-        m_ukf_estimate_exists = ukf_estimate_exists;
-        m_ukf_estimate = ukf_estimate;
-        m_ukf_last_update = ukf_last_update;
-        m_ukf_n_updates = ukf_n_updates;
-      }
-    } else
-    {
-      ROS_INFO("[UKF]: No point is close enough to [%.2f, %.2f, %.2f]", ukf_estimate.x.x(), ukf_estimate.x.y(), ukf_estimate.x.z());
-    }
-    return meas_valid;
+    set_mutexed(m_ukf_estimate_mtx,
+        std::make_tuple(ukf_estimate_exists, ukf_estimate, ukf_last_update, ukf_n_updates),
+        std::forward_as_tuple(m_ukf_estimate_exists, m_ukf_estimate, m_ukf_last_update, m_ukf_n_updates));
   }
   //}
 
@@ -404,10 +408,8 @@ namespace balloon_filter
   //}
 
   /* init_ukf_estimate() method //{ */
-  bool BalloonFilter::init_ukf_estimate(const ros::Time& stamp, pos_cov_t& used_meas, const theta_t& plane_theta)
+  void BalloonFilter::init_ukf_estimate(const ros::Time& stamp, const theta_t& plane_theta)
   {
-    /* pos_cov_t closest_meas; */
-    /* bool meas_valid = find_closest(measurements, closest_meas); */
     const auto init_statecov_opt = estimate_ukf_initial_state(plane_theta);
     if (init_statecov_opt.has_value())
     {
@@ -416,36 +418,19 @@ namespace balloon_filter
           init_statecov.x(ukf::x::x), init_statecov.x(ukf::x::y), init_statecov.x(ukf::x::z),
           init_statecov.x(ukf::x::yaw), init_statecov.x(ukf::x::c));
 
-      {
-        std::scoped_lock lck(m_ukf_estimate_mtx);
-
-        m_ukf_estimate = init_statecov;
-
-        m_ukf_estimate_exists = true;
-        m_ukf_last_update = stamp;
-        m_ukf_n_updates = 1;
-      }
-      const pos_t init_pt(init_statecov.x(ukf::x::x), init_statecov.x(ukf::x::y), init_statecov.x(ukf::x::z));
-      const cov_t init_pt_cov = init_statecov.P.block<3, 3>(0, 0);
-      used_meas = {init_pt, init_pt_cov};
+      set_mutexed(m_ukf_estimate_mtx,
+          std::make_tuple(      init_statecov,  true,                  stamp,             1),
+          std::forward_as_tuple(m_ukf_estimate, m_ukf_estimate_exists, m_ukf_last_update, m_ukf_n_updates));
     }
-    /* else */
-    /* { */
-    /*   ROS_INFO("[UKF]: No point is valid for estimate initialization"); */
-    /* } */
-    /* return meas_valid; */
-    return true;
   }
   //}
 
   /* reset_ukf_estimate() method //{ */
   void BalloonFilter::reset_ukf_estimate()
   {
-    std::scoped_lock lck(m_ukf_estimate_mtx);
-    m_ukf_estimate_exists = false;
-    m_ukf_last_update = ros::Time::now();
-    m_ukf_n_updates = 0;
-
+    set_mutexed(m_ukf_estimate_mtx,
+        std::make_tuple(      false,                 ros::Time::now(),  0),
+        std::forward_as_tuple(m_ukf_estimate_exists, m_ukf_last_update, m_ukf_n_updates));
     ROS_WARN("[%s]: UKF estimate ==RESET==.", m_node_name.c_str());
   }
   //}
@@ -503,8 +488,9 @@ namespace balloon_filter
   // --------------------------------------------------------------
 
   /* filter_states() method //{ */
-  double BalloonFilter::lpf_filter_states(const UKF::x_t& ukf_states, const double dt)
+  double BalloonFilter::lpf_filter_states(const UKF::x_t& ukf_states, const ros::Time& stamp)
   {
+    const double dt = (stamp - m_ukf_last_update).toSec();
     const double omega = M_PI_2*dt*m_lpf_cutoff_freq;
     const double c = std::cos(omega);
     const double alpha = c - 1.0 + std::sqrt(c*c - 4.0*c + 3.0);
@@ -543,17 +529,17 @@ namespace balloon_filter
   //}
 
   /* find_most_likely_association() method //{ */
-  std::tuple<pos_cov_t, double> BalloonFilter::find_most_likely_association(const pos_cov_t& prev_pt, const std::vector<pos_cov_t>& measurements, const double expected_speed, const double dt)
+  std::tuple<pos_cov_t, double> BalloonFilter::find_most_likely_association(const pos_cov_t& prev_meas, const std::vector<pos_cov_t>& measurements, const double expected_speed, const double dt)
   {
     pos_cov_t most_likely;
     double max_loglikelihood = std::numeric_limits<double>::lowest();
     for (const auto& meas : measurements)
     {
-      const auto diff_vec = meas.pos - prev_pt.pos;
+      const auto diff_vec = meas.pos - prev_meas.pos;
       const auto diff_vec_exp = diff_vec.normalized()*dt*expected_speed;
       const auto err_vec = diff_vec - diff_vec_exp;
       const pos_cov_t err_pos_cov {err_vec, meas.cov};
-      const double loglikelihood = calc_hyp_meas_loglikelihood<3>(prev_pt, err_pos_cov);
+      const double loglikelihood = calc_hyp_meas_loglikelihood<3>(prev_meas, err_pos_cov);
       if (loglikelihood > max_loglikelihood)
       {
         max_loglikelihood = loglikelihood;
@@ -561,6 +547,29 @@ namespace balloon_filter
       }
     }
     return {most_likely, max_loglikelihood};
+  }
+  //}
+
+  /* find_most_likely_association() method //{ */
+  std::optional<pos_cov_t> BalloonFilter::find_speed_compliant_measurement(
+      const std::vector<pos_cov_t>& prev_meass,
+      const std::vector<pos_cov_t>& measurements,
+      const double expected_speed,
+      const double dt,
+      const double loglikelihood_threshold)
+  {
+    std::optional<pos_cov_t> most_likely = std::nullopt;
+    double max_loglikelihood = std::numeric_limits<double>::lowest();
+    for (const auto& prev_meas : prev_meass)
+    {
+      const auto [association, loglikelihood] = find_most_likely_association(prev_meas, measurements, expected_speed, dt);
+      if (loglikelihood > max_loglikelihood && loglikelihood > loglikelihood_threshold)
+      {
+        max_loglikelihood = loglikelihood;
+        most_likely = association;
+      }
+    }
+    return most_likely;
   }
   //}
 
@@ -866,45 +875,45 @@ namespace balloon_filter
   }
   //}
 
-  /* find_closest_to() method //{ */
-  bool BalloonFilter::find_closest_to(const std::vector<pos_cov_t>& measurements, const pos_t& to_position, pos_cov_t& closest_out, bool use_gating)
-  {
-    double min_dist = std::numeric_limits<double>::infinity();
-    pos_cov_t closest_pt{std::numeric_limits<double>::quiet_NaN() * pos_t::Ones(), std::numeric_limits<double>::quiet_NaN() * cov_t::Ones()};
-    for (const auto& pt : measurements)
-    {
-      const double cur_dist = (to_position - pt.pos).norm();
-      if (cur_dist < min_dist)
-      {
-        min_dist = cur_dist;
-        closest_pt = pt;
-      }
-    }
-    if (use_gating)
-    {
-      if (min_dist < m_gating_distance)
-      {
-        closest_out = closest_pt;
-        return true;
-      } else
-      {
-        return false;
-      }
-    } else
-    {
-      closest_out = closest_pt;
-      return true;
-    }
-  }
-  //}
+  /* /1* find_closest_to() method //{ *1/ */
+  /* bool BalloonFilter::find_closest_to(const std::vector<pos_cov_t>& measurements, const pos_t& to_position, pos_cov_t& closest_out, bool use_gating) */
+  /* { */
+  /*   double min_dist = std::numeric_limits<double>::infinity(); */
+  /*   pos_cov_t closest_pt{std::numeric_limits<double>::quiet_NaN() * pos_t::Ones(), std::numeric_limits<double>::quiet_NaN() * cov_t::Ones()}; */
+  /*   for (const auto& pt : measurements) */
+  /*   { */
+  /*     const double cur_dist = (to_position - pt.pos).norm(); */
+  /*     if (cur_dist < min_dist) */
+  /*     { */
+  /*       min_dist = cur_dist; */
+  /*       closest_pt = pt; */
+  /*     } */
+  /*   } */
+  /*   if (use_gating) */
+  /*   { */
+  /*     if (min_dist < m_gating_distance) */
+  /*     { */
+  /*       closest_out = closest_pt; */
+  /*       return true; */
+  /*     } else */
+  /*     { */
+  /*       return false; */
+  /*     } */
+  /*   } else */
+  /*   { */
+  /*     closest_out = closest_pt; */
+  /*     return true; */
+  /*   } */
+  /* } */
+  /* //} */
 
-  /* find_closest() method //{ */
-  bool BalloonFilter::find_closest(const std::vector<pos_cov_t>& measuremets, pos_cov_t& closest_out)
-  {
-    pos_t cur_pos = get_cur_mav_pos();
-    return find_closest_to(measuremets, cur_pos, closest_out, false);
-  }
-  //}
+  /* /1* find_closest() method //{ *1/ */
+  /* bool BalloonFilter::find_closest(const std::vector<pos_cov_t>& measuremets, pos_cov_t& closest_out) */
+  /* { */
+  /*   pos_t cur_pos = get_cur_mav_pos(); */
+  /*   return find_closest_to(measuremets, cur_pos, closest_out, false); */
+  /* } */
+  /* //} */
 
   /* message_to_positions() method //{ */
   std::vector<pos_cov_t> BalloonFilter::message_to_positions(const detections_t& balloon_msg)
@@ -1039,7 +1048,7 @@ namespace balloon_filter
   {
     m_z_bounds_min = cfg.z_bounds__min;
     m_z_bounds_max = cfg.z_bounds__max;
-    m_gating_distance = cfg.gating_distance;
+    m_loglikelihood_threshold = cfg.loglikelihood_threshold;
     m_max_time_since_update = cfg.max_time_since_update;
     m_min_updates_to_confirm = cfg.min_updates_to_confirm;
 
@@ -1084,9 +1093,6 @@ namespace balloon_filter
 
     pl.load_param("world_frame_id", m_world_frame_id);
     pl.load_param("uav_frame_id", m_uav_frame_id);
-    pl.load_param("gating_distance", m_gating_distance);
-    pl.load_param("max_time_since_update", m_max_time_since_update);
-    pl.load_param("min_updates_to_confirm", m_min_updates_to_confirm);
     pl.load_param("ball_speed1", m_ball_speed1);
     pl.load_param("ball_speed2", m_ball_speed2);
     const ros::Duration ball_speed_change_after = pl.load_param2("ball_speed_change_after");
