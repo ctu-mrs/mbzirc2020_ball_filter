@@ -121,6 +121,7 @@ namespace balloon_filter
 
       ros::Duration m_ukf_init_history_duration;
       double m_loglikelihood_threshold;
+      double m_covariance_inflation;
       double m_max_time_since_update;
       double m_min_updates_to_confirm;
       double m_z_bounds_min;
@@ -216,6 +217,7 @@ namespace balloon_filter
       /*  //{ */
       
       double m_lpf_cutoff_freq;
+      ros::Time m_lpf_last_update;
       double m_curv_filt;
       
       //}
@@ -249,7 +251,7 @@ namespace balloon_filter
       //}
 
       template <unsigned num_dimensions>
-      double calc_hyp_meas_loglikelihood(const pos_cov_t& hyp, const pos_cov_t& meas);
+      double calc_hyp_meas_loglikelihood(const pos_cov_t& hyp, const pos_cov_t& meas, const double cov_inflation);
       cov_t msg2cov(const ros_cov_t& msg_cov);
       cov_t rotate_covariance(const cov_t& covariance, const cov_t& rotation);
       bool point_valid(const pos_t& pt);
@@ -258,8 +260,8 @@ namespace balloon_filter
       pos_t plane_origin(const theta_t& plane_theta, const pos_t& origin);
       UKF::u_t construct_u(const theta_t& plane_theta, const double speed);
       double ball_speed_at_time(const ros::Time& timestamp);
-      std::tuple<pos_cov_t, double> find_most_likely_association(const pos_cov_t& prev_pt, const std::vector<pos_cov_t>& measurements, const double expected_speed, const double dt);
-      std::optional<pos_cov_t> find_speed_compliant_measurement(const std::vector<pos_cov_t>& prev_meass, const std::vector<pos_cov_t>& measurements, const double expected_speed, const double dt, const double loglikelihood_threshold);
+      std::tuple<pos_cov_t, double> find_most_likely_association(const pos_cov_t& prev_pt, const std::vector<pos_cov_t>& measurements, const double expected_speed, const double dt, const double cov_inflation);
+      std::optional<pos_cov_t> find_speed_compliant_measurement(const std::vector<pos_cov_t>& prev_meass, const std::vector<pos_cov_t>& measurements, const double expected_speed, const double dt, const double loglikelihood_threshold, const double cov_inflation);
 
       /* RHEIV related methods //{ */
       
@@ -278,7 +280,7 @@ namespace balloon_filter
       /* LPF related methods //{ */
       
       double lpf_filter_states(const UKF::x_t& ukf_states, const ros::Time& stamp);
-      void lpf_reset(const UKF::x_t& ukf_states);
+      void lpf_reset(const UKF::x_t& ukf_states, const ros::Time& stamp);
       
       //}
 

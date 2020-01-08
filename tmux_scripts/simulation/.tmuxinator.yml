@@ -61,3 +61,7 @@ windows:
       layout: even-vertical
       panes:
         - waitForControl; roslaunch object_detect object_detect.launch
+  - filter:
+      layout: even-vertical
+      panes:
+        - waitForControl; history -s roslaunch balloon_filter filter_eightball.launch

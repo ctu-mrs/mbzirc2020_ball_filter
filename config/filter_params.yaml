@@ -1,11 +1,13 @@
 planning_period: 0.01 # seconds
-gating_distance: 20.0 # meters
 max_time_since_update: 2.0 # seconds
 min_updates_to_confirm: 10
 
 ball_speed1: 5.0 # metres per second
 ball_speed2: 5.0 # metres per second
 ball_speed_change_after: 480.0 # seconds (480s is 8min)
+
+covariance_inflation: 1.0 # how much to inflate the measurement covariance when choosing measurements
+loglikelihood_threshold: -10.0
 
 ukf:
   prediction_horizon: 10.0 # seconds

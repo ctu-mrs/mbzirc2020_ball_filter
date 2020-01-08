@@ -27,18 +27,15 @@ namespace balloon_filter
         }
 
         const double dt = (balloons.header.stamp - m_prev_measurements_stamp).toSec();
-        const auto chosen_meas_opt = find_speed_compliant_measurement(m_prev_measurements, measurements, ball_speed_at_time(balloons.header.stamp), dt, m_loglikelihood_threshold);
+        const auto chosen_meas_opt = find_speed_compliant_measurement(m_prev_measurements, measurements, ball_speed_at_time(balloons.header.stamp), dt, m_loglikelihood_threshold, m_covariance_inflation);
+        m_prev_measurements = measurements;
+        m_prev_measurements_stamp = balloons.header.stamp;
         if (!chosen_meas_opt.has_value())
         {
           ROS_WARN_THROTTLE(1.0, "[BalloonFilter]: No detections complied to the expected speed, skipping.");
-          m_prev_measurements = measurements;
-          m_prev_measurements_stamp = balloons.header.stamp;
           return;
         }
         const auto chosen_meas = chosen_meas_opt.value();
-        m_prev_measurements.clear();
-        m_prev_measurements.push_back(chosen_meas);
-        m_prev_measurements_stamp = balloons.header.stamp;
 
         /* publish the used measurement for debugging and visualisation purposes //{ */
         {
@@ -75,7 +72,7 @@ namespace balloon_filter
           else
           {
             init_ukf_estimate(balloons.header.stamp, plane_theta);
-            lpf_reset(m_ukf_estimate.x);
+            lpf_reset(m_ukf_estimate.x, balloons.header.stamp);
           }
 
           /* publish the filtered curvature //{ */
@@ -345,7 +342,7 @@ namespace balloon_filter
     ros::Time cur_time = ros::Time::now();
     ros::Time last_stamp;
     std::vector<std::tuple<pos_t, cov_t, ros::Time>> used_meass;
-    for (int it = n_pts-1; it; it--)
+    for (int it = n_pts-1; it >= 0; it--)
     {
       const auto cur_pt = rheiv_pts.at(it);
       const auto cur_cov = rheiv_covs.at(it);
@@ -369,12 +366,13 @@ namespace balloon_filter
       ROS_ERROR("[BalloonFilter]: No recent points available for initial state estimation. Newest point is %.2fs old, need at most %.2fs.", (cur_time - rheiv_stamps.back()).toSec(), m_ukf_init_history_duration.toSec());
       return std::nullopt;
     }
+    ROS_INFO("[UKF]: Trying to initialize UKF using %lu/%i points.", used_meass.size(), n_pts);
   
     UKF::statecov_t statecov;
     ros::Time prev_stamp;
     bool statecov_initd = false;
 
-    for (size_t it = used_meass.size()-1; it; it--)
+    for (int it = used_meass.size()-1; it >= 0; it--)
     {
       const auto [cur_pt, cur_cov, cur_stamp] = used_meass.at(it);
       if (!statecov_initd)
@@ -490,7 +488,7 @@ namespace balloon_filter
   /* filter_states() method //{ */
   double BalloonFilter::lpf_filter_states(const UKF::x_t& ukf_states, const ros::Time& stamp)
   {
-    const double dt = (stamp - m_ukf_last_update).toSec();
+    const double dt = (stamp - m_lpf_last_update).toSec();
     const double omega = M_PI_2*dt*m_lpf_cutoff_freq;
     const double c = std::cos(omega);
     const double alpha = c - 1.0 + std::sqrt(c*c - 4.0*c + 3.0);
@@ -498,16 +496,18 @@ namespace balloon_filter
     const double curv_curr = ukf_states(ukf::x::c);
     m_curv_filt = (1.0-alpha)*m_curv_filt + alpha*curv_curr;
     ROS_INFO_THROTTLE(1.0, "[LPF]: Using cutoff frequency of %.2fHz for curvature, resulting in %.2f normalized frequency, %.2f its cosine and %.2f alpha.\ncurv_curr: %.2f\ncurv_filt: %.2f", m_lpf_cutoff_freq, omega, c, alpha, curv_curr, m_curv_filt);
-  
+    m_lpf_last_update = stamp;
+
     return m_curv_filt;
   }
   //}
 
   /* lpf_reset() method //{ */
-  void BalloonFilter::lpf_reset(const UKF::x_t& ukf_states)
+  void BalloonFilter::lpf_reset(const UKF::x_t& ukf_states, const ros::Time& stamp)
   {
     const double curv_curr = ukf_states(ukf::x::c);
     m_curv_filt = curv_curr;
+    m_lpf_last_update = stamp;
   }
   //}
 
@@ -517,29 +517,39 @@ namespace balloon_filter
   
   /* calc_hyp_meas_loglikelihood() method //{ */
   template <unsigned num_dimensions>
-  double BalloonFilter::calc_hyp_meas_loglikelihood(const pos_cov_t& hyp, const pos_cov_t& meas)
+  double BalloonFilter::calc_hyp_meas_loglikelihood(const pos_cov_t& hyp, const pos_cov_t& meas, const double cov_inflation)
   {
     const pos_t inn = meas.pos - hyp.pos;
-    const cov_t inn_cov = meas.cov + hyp.cov;
-    constexpr double dylog2pi = num_dimensions*log(2*M_PI);
-    const double a = inn.transpose() * inn_cov.inverse() * inn;
-    const double b = log(inn_cov.determinant());
-    return - (a + b + dylog2pi)/2.0;
+    const cov_t inn_cov = cov_inflation*(meas.cov + hyp.cov);
+    cov_t inverse;
+    bool invertible;
+    double determinant;
+    inn_cov.computeInverseAndDetWithCheck(inverse, determinant, invertible);
+    if (!invertible)
+      ROS_ERROR("[]: Covariance matrix of a measurement is not invertible!! May produce garbage.");
+    constexpr double dylog2pi = num_dimensions*std::log(2*M_PI);
+    const double a = inn.transpose() * inverse * inn;
+    const double b = std::log(determinant);
+    const double res = - (a + b + dylog2pi)/2.0;
+    return res;
   }
   //}
 
   /* find_most_likely_association() method //{ */
-  std::tuple<pos_cov_t, double> BalloonFilter::find_most_likely_association(const pos_cov_t& prev_meas, const std::vector<pos_cov_t>& measurements, const double expected_speed, const double dt)
+  std::tuple<pos_cov_t, double> BalloonFilter::find_most_likely_association(const pos_cov_t& prev_meas, const std::vector<pos_cov_t>& measurements, const double expected_speed, const double dt, const double cov_inflation)
   {
     pos_cov_t most_likely;
     double max_loglikelihood = std::numeric_limits<double>::lowest();
+    /* size_t it = 0; */
     for (const auto& meas : measurements)
     {
       const auto diff_vec = meas.pos - prev_meas.pos;
       const auto diff_vec_exp = diff_vec.normalized()*dt*expected_speed;
       const auto err_vec = diff_vec - diff_vec_exp;
       const pos_cov_t err_pos_cov {err_vec, meas.cov};
-      const double loglikelihood = calc_hyp_meas_loglikelihood<3>(prev_meas, err_pos_cov);
+      const pos_cov_t tmp_pos_cov {{0.0, 0.0, 0.0}, prev_meas.cov};
+      const double loglikelihood = calc_hyp_meas_loglikelihood<3>(tmp_pos_cov, err_pos_cov, cov_inflation);
+      /* ROS_INFO("[]: loglikelihood %lu: %.2f", it, loglikelihood); it++; */
       if (loglikelihood > max_loglikelihood)
       {
         max_loglikelihood = loglikelihood;
@@ -550,19 +560,22 @@ namespace balloon_filter
   }
   //}
 
-  /* find_most_likely_association() method //{ */
+  /* find_speed_compliant_measurement() method //{ */
   std::optional<pos_cov_t> BalloonFilter::find_speed_compliant_measurement(
       const std::vector<pos_cov_t>& prev_meass,
       const std::vector<pos_cov_t>& measurements,
       const double expected_speed,
       const double dt,
-      const double loglikelihood_threshold)
+      const double loglikelihood_threshold,
+      const double cov_inflation)
   {
     std::optional<pos_cov_t> most_likely = std::nullopt;
     double max_loglikelihood = std::numeric_limits<double>::lowest();
+    /* size_t it = 0; */
     for (const auto& prev_meas : prev_meass)
     {
-      const auto [association, loglikelihood] = find_most_likely_association(prev_meas, measurements, expected_speed, dt);
+      /* ROS_INFO("[]: Measurement %lu: ------", it); it++; */
+      const auto [association, loglikelihood] = find_most_likely_association(prev_meas, measurements, expected_speed, dt, cov_inflation);
       if (loglikelihood > max_loglikelihood && loglikelihood > loglikelihood_threshold)
       {
         max_loglikelihood = loglikelihood;
@@ -1049,6 +1062,7 @@ namespace balloon_filter
     m_z_bounds_min = cfg.z_bounds__min;
     m_z_bounds_max = cfg.z_bounds__max;
     m_loglikelihood_threshold = cfg.loglikelihood_threshold;
+    m_covariance_inflation = cfg.covariance_inflation;
     m_max_time_since_update = cfg.max_time_since_update;
     m_min_updates_to_confirm = cfg.min_updates_to_confirm;
 
