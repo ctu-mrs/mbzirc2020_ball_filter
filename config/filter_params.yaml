@@ -7,7 +7,7 @@ ball_speed2: 5.0 # metres per second
 ball_speed_change_after: 480.0 # seconds (480s is 8min)
 
 covariance_inflation: 1.0 # how much to inflate the measurement covariance when choosing measurements
-loglikelihood_threshold: -1.0
+loglikelihood_threshold: 1.0
 
 ukf:
   prediction_horizon: 10.0 # seconds

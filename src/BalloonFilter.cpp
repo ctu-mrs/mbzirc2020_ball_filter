@@ -32,7 +32,7 @@ namespace balloon_filter
         m_prev_measurements_stamp = balloons.header.stamp;
         if (!chosen_meas_opt.has_value())
         {
-          ROS_WARN_THROTTLE(1.0, "[BalloonFilter]: No detections complied to the expected speed, skipping.");
+          ROS_WARN_THROTTLE(1.0, "[BalloonFilter]: No detections complied with the expected speed, skipping.");
           return;
         }
         const auto chosen_meas = chosen_meas_opt.value();
@@ -552,8 +552,8 @@ namespace balloon_filter
       /* ROS_INFO("[]: loglikelihood %lu: %.2f", it, loglikelihood); it++; */
       if (loglikelihood > max_loglikelihood)
       {
-        max_loglikelihood = loglikelihood;
         most_likely = meas;
+        max_loglikelihood = loglikelihood;
       }
     }
     return {most_likely, max_loglikelihood};
@@ -578,10 +578,14 @@ namespace balloon_filter
       const auto [association, loglikelihood] = find_most_likely_association(prev_meas, measurements, expected_speed, dt, cov_inflation);
       if (loglikelihood > max_loglikelihood && loglikelihood > loglikelihood_threshold)
       {
-        max_loglikelihood = loglikelihood;
         most_likely = association;
+        max_loglikelihood = loglikelihood;
       }
     }
+    if (most_likely.has_value())
+      ROS_INFO("[]: Picking measurement with likelihood %.2f", max_loglikelihood);
+    else
+      ROS_INFO("[]: No measurement sufficiently likely");
     return most_likely;
   }
   //}
