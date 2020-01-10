@@ -28,14 +28,15 @@ namespace balloon_filter
         const auto [prev_measurements, prev_measurements_stamp] = find_closest_dt(m_prev_measurements, balloons.header.stamp, m_meas_filt_desired_dt);
         const double dt = (balloons.header.stamp - prev_measurements_stamp).toSec();
         ROS_INFO_THROTTLE(1.0, "[BalloonFilter]: Using detection with %.2fs dt.", dt);
-        const auto chosen_meas_opt = find_speed_compliant_measurement(prev_measurements, measurements, ball_speed_at_time(balloons.header.stamp), dt, m_meas_filt_loglikelihood_threshold, m_meas_filt_covariance_inflation);
+        const auto chosen_meass_opt = find_speed_compliant_measurement(prev_measurements, measurements, ball_speed_at_time(balloons.header.stamp), dt, m_meas_filt_loglikelihood_threshold, m_meas_filt_covariance_inflation);
         m_prev_measurements.push_back({measurements, balloons.header.stamp});
-        if (!chosen_meas_opt.has_value())
+        if (!chosen_meass_opt.has_value())
         {
           ROS_WARN_THROTTLE(1.0, "[BalloonFilter]: No detections complied with the expected speed, skipping.");
           return;
         }
-        const auto chosen_meas = chosen_meas_opt.value();
+        const auto chosen_meas_prev = chosen_meass_opt.value().first;
+        const auto chosen_meas = chosen_meass_opt.value().second;
 
         /* publish the used measurement for debugging and visualisation purposes //{ */
         {
@@ -43,6 +44,53 @@ namespace balloon_filter
           header.frame_id = m_world_frame_id;
           header.stamp = balloons.header.stamp;
           m_pub_used_meas.publish(to_output_message(chosen_meas, header));
+
+          const size_t n_pts = measurements.size() + prev_measurements.size();
+          sensor_msgs::PointCloud2 ret;
+          ret.header = header;
+          ret.height = 1;
+          ret.width = n_pts;
+
+          {
+            // Prepare the PointCloud2
+            sensor_msgs::PointCloud2Modifier modifier(ret);
+            modifier.setPointCloud2Fields(4, "x", 1, sensor_msgs::PointField::FLOAT32,
+                                             "y", 1, sensor_msgs::PointField::FLOAT32,
+                                             "z", 1, sensor_msgs::PointField::FLOAT32,
+                                             "type", 1, sensor_msgs::PointField::INT32);
+            modifier.resize(n_pts);
+          }
+
+          {
+            // Fill the PointCloud2
+            sensor_msgs::PointCloud2Iterator<float> iter_x(ret, "x");
+            sensor_msgs::PointCloud2Iterator<float> iter_y(ret, "y");
+            sensor_msgs::PointCloud2Iterator<float> iter_z(ret, "z");
+            sensor_msgs::PointCloud2Iterator<int32_t> iter_type(ret, "type");
+            for (size_t it = 0; it < measurements.size(); it++, ++iter_x, ++iter_y, ++iter_z, ++iter_type)
+            {
+              const auto& pt = measurements.at(it);
+              *iter_x = pt.pos.x();
+              *iter_y = pt.pos.y();
+              *iter_z = pt.pos.z();
+              if (pt.pos == chosen_meas.pos && pt.cov == chosen_meas.cov)
+                *iter_type = 0;
+              else
+                *iter_type = 1;
+            }
+            for (size_t it = 0; it < prev_measurements.size(); it++, ++iter_x, ++iter_y, ++iter_z, ++iter_type)
+            {
+              const auto& pt = prev_measurements.at(it);
+              *iter_x = pt.pos.x();
+              *iter_y = pt.pos.y();
+              *iter_z = pt.pos.z();
+              if (pt.pos == chosen_meas_prev.pos && pt.cov == chosen_meas_prev.cov)
+                *iter_type = 2;
+              else
+                *iter_type = 3;
+            }
+          }
+          m_pub_meas_filt_dbg.publish(ret);
         }
         //}
 
@@ -582,7 +630,7 @@ namespace balloon_filter
   //}
 
   /* find_speed_compliant_measurement() method //{ */
-  std::optional<pos_cov_t> BalloonFilter::find_speed_compliant_measurement(
+  std::optional<std::pair<pos_cov_t, pos_cov_t>> BalloonFilter::find_speed_compliant_measurement(
       const std::vector<pos_cov_t>& prev_meass,
       const std::vector<pos_cov_t>& measurements,
       const double expected_speed,
@@ -591,6 +639,7 @@ namespace balloon_filter
       const double cov_inflation)
   {
     std::optional<pos_cov_t> most_likely = std::nullopt;
+    std::optional<pos_cov_t> most_likely_prev = std::nullopt;
     double max_loglikelihood = std::numeric_limits<double>::lowest();
     /* size_t it = 0; */
     for (const auto& prev_meas : prev_meass)
@@ -600,20 +649,27 @@ namespace balloon_filter
       if (loglikelihood > max_loglikelihood)
       {
         most_likely = association;
+        most_likely_prev = prev_meas;
         max_loglikelihood = loglikelihood;
       }
     }
-    if (most_likely.has_value())
+    if (most_likely.has_value() && most_likely_prev.has_value())
     {
       if (max_loglikelihood > loglikelihood_threshold)
+      {
         ROS_INFO("[BalloonFilter]: Picking measurement with likelihood %.2f", max_loglikelihood);
+      }
       else
+      {
         ROS_INFO("[BalloonFilter]: No measurement sufficiently likely (most likely is %.2f)", max_loglikelihood);
+        return std::nullopt;
+      }
     } else
     {
       ROS_INFO("[BalloonFilter]: No measurement available!");
+      return std::nullopt;
     }
-    return most_likely;
+    return std::make_pair(most_likely_prev.value(), most_likely.value());
   }
   //}
 
@@ -847,7 +903,7 @@ namespace balloon_filter
       // Prepare the PointCloud2
       sensor_msgs::PointCloud2Modifier modifier(ret);
       modifier.setPointCloud2FieldsByString(1, "xyz");
-      modifier.reserve(n_pts);
+      modifier.resize(n_pts);
     }
 
     {
@@ -1176,6 +1232,8 @@ namespace balloon_filter
     //}
 
     /* publishers //{ */
+
+    m_pub_meas_filt_dbg = nh.advertise<sensor_msgs::PointCloud2>("measurement_filter", 1);
 
     m_pub_plane_dbg = nh.advertise<visualization_msgs::MarkerArray>("fitted_plane_marker", 1);
     m_pub_plane_dbg2 = nh.advertise<geometry_msgs::PoseStamped>("fitted_plane_pose", 1);

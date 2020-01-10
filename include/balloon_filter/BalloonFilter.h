@@ -145,6 +145,8 @@ namespace balloon_filter
       std::unique_ptr<tf2_ros::TransformListener> m_tf_listener_ptr;
       mrs_lib::SubscribeHandlerPtr<detections_t> m_sh_balloons;
 
+      ros::Publisher m_pub_meas_filt_dbg;
+
       ros::Publisher m_pub_plane_dbg;
       ros::Publisher m_pub_plane_dbg2;
       ros::Publisher m_pub_used_pts;
@@ -256,7 +258,7 @@ namespace balloon_filter
       UKF::u_t construct_u(const theta_t& plane_theta, const double speed);
       double ball_speed_at_time(const ros::Time& timestamp);
       std::tuple<pos_cov_t, double> find_most_likely_association(const pos_cov_t& prev_pt, const std::vector<pos_cov_t>& measurements, const double expected_speed, const double dt, const double cov_inflation);
-      std::optional<pos_cov_t> find_speed_compliant_measurement(const std::vector<pos_cov_t>& prev_meass, const std::vector<pos_cov_t>& measurements, const double expected_speed, const double dt, const double loglikelihood_threshold, const double cov_inflation);
+      std::optional<std::pair<pos_cov_t, pos_cov_t>> find_speed_compliant_measurement(const std::vector<pos_cov_t>& prev_meass, const std::vector<pos_cov_t>& measurements, const double expected_speed, const double dt, const double loglikelihood_threshold, const double cov_inflation);
 
       prev_measurement_t find_closest_dt(const prev_measurements_t& measurements, const ros::Time& from_time, const ros::Duration& desired_dt);
 

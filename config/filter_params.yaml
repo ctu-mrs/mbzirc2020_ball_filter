@@ -10,7 +10,7 @@ meas_filt:
   desired_dt: 0.5 # seconds
   buffer_length: 10
   covariance_inflation: 1.0 # how much to inflate the measurement covariance when choosing measurements
-  loglikelihood_threshold: -1.0
+  loglikelihood_threshold: -5.0
 
 ukf:
   prediction_horizon: 10.0 # seconds
