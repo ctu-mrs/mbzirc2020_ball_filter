@@ -120,8 +120,8 @@ namespace balloon_filter
       int m_rheiv_visualization_size;
 
       ros::Duration m_ukf_init_history_duration;
-      double m_loglikelihood_threshold;
-      double m_covariance_inflation;
+      double m_meas_filt_loglikelihood_threshold;
+      double m_meas_filt_covariance_inflation;
       double m_max_time_since_update;
       double m_min_updates_to_confirm;
       double m_z_bounds_min;
@@ -185,13 +185,6 @@ namespace balloon_filter
         m_rheiv_last_data_update = ros::Time::now();
         m_rheiv_new_data = true;
       };
-      std::tuple<boost::circular_buffer<pos_t>, boost::circular_buffer<cov_t>, boost::circular_buffer<ros::Time>, bool, ros::Time> get_rheiv_data()
-      {
-        std::scoped_lock lck(m_rheiv_data_mtx);
-        const bool got_new_data = m_rheiv_new_data;
-        m_rheiv_new_data = false;
-        return {m_rheiv_pts, m_rheiv_covs, m_rheiv_stamps, got_new_data, m_rheiv_last_data_update};
-      };
       
       std::mutex m_rheiv_theta_mtx;
       bool m_rheiv_theta_valid;
@@ -224,8 +217,10 @@ namespace balloon_filter
 
       // | --------------------- Other variables -------------------- |
 
-      std::vector<pos_cov_t> m_prev_measurements;
-      ros::Time m_prev_measurements_stamp;
+      ros::Duration m_meas_filt_desired_dt;
+      using prev_measurement_t = std::tuple<std::vector<pos_cov_t>, ros::Time>;
+      using prev_measurements_t = boost::circular_buffer<prev_measurement_t>;
+      prev_measurements_t m_prev_measurements;
 
     private:
 
@@ -262,6 +257,8 @@ namespace balloon_filter
       double ball_speed_at_time(const ros::Time& timestamp);
       std::tuple<pos_cov_t, double> find_most_likely_association(const pos_cov_t& prev_pt, const std::vector<pos_cov_t>& measurements, const double expected_speed, const double dt, const double cov_inflation);
       std::optional<pos_cov_t> find_speed_compliant_measurement(const std::vector<pos_cov_t>& prev_meass, const std::vector<pos_cov_t>& measurements, const double expected_speed, const double dt, const double loglikelihood_threshold, const double cov_inflation);
+
+      prev_measurement_t find_closest_dt(const prev_measurements_t& measurements, const ros::Time& from_time, const ros::Duration& desired_dt);
 
       /* RHEIV related methods //{ */
       

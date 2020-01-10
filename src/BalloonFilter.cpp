@@ -21,15 +21,15 @@ namespace balloon_filter
         std::vector<pos_cov_t> measurements = message_to_positions(balloons);
         if (m_prev_measurements.empty())
         {
-          m_prev_measurements = measurements;
-          m_prev_measurements_stamp = balloons.header.stamp;
+          m_prev_measurements.push_back({measurements, balloons.header.stamp});
           return;
         }
 
-        const double dt = (balloons.header.stamp - m_prev_measurements_stamp).toSec();
-        const auto chosen_meas_opt = find_speed_compliant_measurement(m_prev_measurements, measurements, ball_speed_at_time(balloons.header.stamp), dt, m_loglikelihood_threshold, m_covariance_inflation);
-        m_prev_measurements = measurements;
-        m_prev_measurements_stamp = balloons.header.stamp;
+        const auto [prev_measurements, prev_measurements_stamp] = find_closest_dt(m_prev_measurements, balloons.header.stamp, m_meas_filt_desired_dt);
+        const double dt = (balloons.header.stamp - prev_measurements_stamp).toSec();
+        ROS_INFO_THROTTLE(1.0, "[BalloonFilter]: Using detection with %.2fs dt.", dt);
+        const auto chosen_meas_opt = find_speed_compliant_measurement(prev_measurements, measurements, ball_speed_at_time(balloons.header.stamp), dt, m_meas_filt_loglikelihood_threshold, m_meas_filt_covariance_inflation);
+        m_prev_measurements.push_back({measurements, balloons.header.stamp});
         if (!chosen_meas_opt.has_value())
         {
           ROS_WARN_THROTTLE(1.0, "[BalloonFilter]: No detections complied with the expected speed, skipping.");
@@ -266,6 +266,27 @@ namespace balloon_filter
       m_pub_pred_path_dbg.publish(predicted_path);
       m_pub_ball_prediction.publish(message);
     }
+  }
+  //}
+
+  /* find_closest_dt() method //{ */
+  BalloonFilter::prev_measurement_t BalloonFilter::find_closest_dt(const prev_measurements_t& measurements, const ros::Time& from_time, const ros::Duration& desired_dt)
+  {
+    assert(!measurements.empty());
+    double closest_dt_diff = std::numeric_limits<double>::max();
+    prev_measurement_t closest_meas;
+    for (const auto& meas : measurements)
+    {
+      const ros::Time cur_stamp = std::get<1>(meas);
+      const ros::Duration cur_dt = from_time - cur_stamp;
+      const double cur_dt_diff = (desired_dt - cur_dt).toSec();
+      if (cur_dt_diff < closest_dt_diff)
+      {
+        closest_dt_diff = cur_dt_diff;
+        closest_meas = meas;
+      }
+    }
+    return closest_meas;
   }
   //}
 
@@ -576,16 +597,22 @@ namespace balloon_filter
     {
       /* ROS_INFO("[]: Measurement %lu: ------", it); it++; */
       const auto [association, loglikelihood] = find_most_likely_association(prev_meas, measurements, expected_speed, dt, cov_inflation);
-      if (loglikelihood > max_loglikelihood && loglikelihood > loglikelihood_threshold)
+      if (loglikelihood > max_loglikelihood)
       {
         most_likely = association;
         max_loglikelihood = loglikelihood;
       }
     }
     if (most_likely.has_value())
-      ROS_INFO("[]: Picking measurement with likelihood %.2f", max_loglikelihood);
-    else
-      ROS_INFO("[]: No measurement sufficiently likely");
+    {
+      if (max_loglikelihood > loglikelihood_threshold)
+        ROS_INFO("[BalloonFilter]: Picking measurement with likelihood %.2f", max_loglikelihood);
+      else
+        ROS_INFO("[BalloonFilter]: No measurement sufficiently likely (most likely is %.2f)", max_loglikelihood);
+    } else
+    {
+      ROS_INFO("[BalloonFilter]: No measurement available!");
+    }
     return most_likely;
   }
   //}
@@ -1065,8 +1092,9 @@ namespace balloon_filter
   {
     m_z_bounds_min = cfg.z_bounds__min;
     m_z_bounds_max = cfg.z_bounds__max;
-    m_loglikelihood_threshold = cfg.loglikelihood_threshold;
-    m_covariance_inflation = cfg.covariance_inflation;
+    m_meas_filt_desired_dt = ros::Duration(cfg.meas_filt__desired_dt);
+    m_meas_filt_loglikelihood_threshold = cfg.meas_filt__loglikelihood_threshold;
+    m_meas_filt_covariance_inflation = cfg.meas_filt__covariance_inflation;
     m_max_time_since_update = cfg.max_time_since_update;
     m_min_updates_to_confirm = cfg.min_updates_to_confirm;
 
@@ -1102,6 +1130,8 @@ namespace balloon_filter
 
     ROS_INFO("[%s]: LOADING STATIC PARAMETERS", m_node_name.c_str());
     mrs_lib::ParamLoader pl(nh, m_node_name);
+
+    const int measurements_buffer_length = pl.load_param2<int>("meas_filt/buffer_length");
 
     const double planning_period = pl.load_param2<double>("planning_period");
     pl.load_param("rheiv/fitting_period", m_rheiv_fitting_period);
@@ -1166,6 +1196,10 @@ namespace balloon_filter
     m_profiler_ptr = std::make_unique<mrs_lib::Profiler>(nh, m_node_name, false);
 
     //}
+
+    {
+      m_prev_measurements.set_capacity(measurements_buffer_length);
+    }
 
     {
       UKF::transition_model_t tra_model(ukf::tra_model_f);
