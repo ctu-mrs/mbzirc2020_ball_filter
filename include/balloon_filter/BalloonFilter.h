@@ -101,6 +101,8 @@ namespace balloon_filter
       void lpf_loop(const ros::TimerEvent& evt);
       void prediction_loop(const ros::TimerEvent& evt);
 
+      void process_detections(const detections_t& detections);
+
     private:
       std::unique_ptr<mrs_lib::Profiler> m_profiler_ptr;
 
@@ -145,6 +147,7 @@ namespace balloon_filter
       tf2_ros::Buffer m_tf_buffer;
       std::unique_ptr<tf2_ros::TransformListener> m_tf_listener_ptr;
       mrs_lib::SubscribeHandlerPtr<detections_t> m_sh_balloons;
+      mrs_lib::SubscribeHandlerPtr<detections_t> m_sh_balloons_bfx;
 
       ros::Publisher m_pub_meas_filt_dbg;
 

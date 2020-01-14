@@ -21,6 +21,7 @@
 
       <!-- Subscribers -->
       <remap from="~balloon_detections" to="object_detect/detected_balls" />
+      <remap from="~balloon_detections_bfx" to="object_detect_bfx/detected_balls" />
 
       <!-- Publishers -->
       <remap from="~balloon_chosen_out" to="~balloon_chosen_out" />
