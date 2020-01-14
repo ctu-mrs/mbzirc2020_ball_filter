@@ -180,6 +180,13 @@ namespace balloon_filter
           ROS_WARN_STREAM_THROTTLE(MSG_THROTTLE, "[UKF]: Current UKF prediction:" << std::endl
                                                                                   << "[\tx\t\ty\t\tz\t\tyaw\t\tspd\t\tcur\t]" << std::endl
                                                                                   << "[" << cur_estimate.x.transpose() << "]");
+          // if the absolute estimated curvature exceeds the user-set threshold, reset it
+          const auto curv = std::abs(cur_estimate.x(ukf::x::c));
+          if (curv > m_ukf_curvature_threshold)
+          {
+            reset_ukf_estimate();
+            ROS_WARN("[UKF]: UKF curvature estimate exceeded the threshold (%.2f > %.2f), resetting the UKF!", curv, m_ukf_curvature_threshold);
+          }
         } else
         {
           ROS_WARN("[UKF]: Failed to predict states (negative dt?).");
@@ -296,7 +303,7 @@ namespace balloon_filter
     const auto [plane_theta_valid, plane_theta] = mrs_lib::get_mutexed(m_rheiv_theta_mtx, m_rheiv_theta_valid, m_rheiv_theta);
     if (ukf_estimate_exists && ukf_n_updates > m_min_updates_to_confirm && plane_theta_valid)
     {
-      const auto predictions = predict_states(ukf_estimate, ukf_last_update, plane_theta, m_prediction_horizon, m_prediction_step);
+      const auto predictions = predict_states(ukf_estimate, ukf_last_update, plane_theta, m_ukf_prediction_horizon, m_ukf_prediction_step);
       balloon_filter::BallPrediction message;
       message.header.frame_id = m_world_frame_id;
       message.header.stamp = ukf_last_update;
@@ -364,8 +371,10 @@ namespace balloon_filter
 
     const UKF::Q_t Q = dt * m_process_std.asDiagonal();
     const UKF::u_t u = construct_u(plane_theta, ball_speed_at_time(to_stamp));
+    UKF::statecov_t ukf_estimate_filt = m_ukf_estimate;
+    ukf_estimate_filt.x(ukf::x::c) = m_curv_filt;
 
-    const auto ret = m_ukf.predict(m_ukf_estimate, u, Q, dt);
+    const auto ret = m_ukf.predict(ukf_estimate_filt, u, Q, dt);
     return ret;
   }
   //}
@@ -1154,7 +1163,8 @@ namespace balloon_filter
     m_max_time_since_update = cfg.max_time_since_update;
     m_min_updates_to_confirm = cfg.min_updates_to_confirm;
 
-    m_prediction_horizon = cfg.ukf__prediction_horizon;
+    m_ukf_prediction_horizon = cfg.ukf__prediction_horizon;
+    m_ukf_curvature_threshold = cfg.ukf__curvature_threshold;
 
     m_process_std(ukf::x::x) = m_process_std(ukf::x::y) = m_process_std(ukf::x::z) = cfg.ukf__process_std__position;
     m_process_std(ukf::x::yaw) = cfg.ukf__process_std__yaw;
@@ -1204,7 +1214,7 @@ namespace balloon_filter
     m_ball_speed_change = ros::Time::now() + ball_speed_change_after;
 
     pl.load_param("ukf/init_history_duration", m_ukf_init_history_duration);
-    pl.load_param("ukf/prediction_step", m_prediction_step);
+    pl.load_param("ukf/prediction_step", m_ukf_prediction_step);
     const double prediction_period = pl.load_param2<double>("ukf/prediction_period");
 
     if (!pl.loaded_successfully())

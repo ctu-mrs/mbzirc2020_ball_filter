@@ -13,6 +13,7 @@ meas_filt:
   loglikelihood_threshold: -5.0
 
 ukf:
+  curvature_threshold: 0.5 # for estimated abs. curvatures larger than this, the UKF will be reset to sanitize the output
   prediction_horizon: 10.0 # seconds
   prediction_step: 0.5 # seconds
   prediction_period: 0.05 # seconds

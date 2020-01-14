@@ -119,7 +119,6 @@ namespace balloon_filter
       int m_rheiv_max_pts;
       int m_rheiv_visualization_size;
 
-      ros::Duration m_ukf_init_history_duration;
       double m_meas_filt_loglikelihood_threshold;
       double m_meas_filt_covariance_inflation;
       double m_max_time_since_update;
@@ -127,8 +126,10 @@ namespace balloon_filter
       double m_z_bounds_min;
       double m_z_bounds_max;
 
-      double m_prediction_horizon;
-      double m_prediction_step;
+      ros::Duration m_ukf_init_history_duration;
+      double m_ukf_curvature_threshold;
+      double m_ukf_prediction_horizon;
+      double m_ukf_prediction_step;
 
       double m_ball_speed1;
       double m_ball_speed2;
