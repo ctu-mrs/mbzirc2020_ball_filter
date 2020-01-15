@@ -12,8 +12,11 @@ meas_filt:
   covariance_inflation: 1.0 # how much to inflate the measurement covariance when choosing measurements
   loglikelihood_threshold: -5.0
 
+lkf:
+  max_speed_err: 1.5 # metre per second
+
 ukf:
-  curvature_threshold: 0.5 # for estimated abs. curvatures larger than this, the UKF will be reset to sanitize the output
+  min_radius: 1.5 # for estimated abs. curvatures larger than this, the UKF will be reset to sanitize the output
   prediction_horizon: 10.0 # seconds
   prediction_step: 0.5 # seconds
   prediction_period: 0.05 # seconds
