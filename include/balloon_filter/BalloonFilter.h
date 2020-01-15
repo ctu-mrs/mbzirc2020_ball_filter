@@ -41,6 +41,7 @@
 #include <mutex>
 
 // local includes
+#include <balloon_filter/vel_lkf.h>
 #include <balloon_filter/eight_ukf.h>
 #include <balloon_filter/plane_rheiv.h>
 /* #include <balloon_filter/conic_rheiv.h> */
@@ -69,6 +70,7 @@ namespace balloon_filter
 
   using RHEIV = rheiv::RHEIV;
   /* using RHEIV_conic = rheiv_conic::RHEIV_conic; */
+  using LKF = lkf::LKF;
   using UKF = ukf::UKF;
   using pos_t = RHEIV::x_t;
   using cov_t = RHEIV::P_t;
@@ -129,16 +131,21 @@ namespace balloon_filter
       double m_z_bounds_max;
 
       ros::Duration m_ukf_init_history_duration;
+      UKF::x_t m_ukf_process_std;
+      UKF::x_t m_ukf_init_std;
       double m_ukf_curvature_threshold;
       double m_ukf_prediction_horizon;
       double m_ukf_prediction_step;
 
+      ros::Duration m_lkf_init_history_duration;
+      LKF::x_t m_lkf_process_std;
+      LKF::x_t m_lkf_init_std;
+      double m_lkf_prediction_horizon;
+      double m_lkf_prediction_step;
+
       double m_ball_speed1;
       double m_ball_speed2;
       ros::Time m_ball_speed_change;
-
-      UKF::x_t m_process_std;
-      UKF::x_t m_init_std;
 
       //}
 
@@ -211,6 +218,16 @@ namespace balloon_filter
       
       //}
 
+      // | ------------------ LKF related variables ----------------- |
+
+      LKF m_lkf;
+      std::mutex m_lkf_estimate_mtx;
+      bool m_lkf_estimate_exists;
+      LKF::statecov_t m_lkf_estimate;
+      ros::Time m_lkf_last_update;
+      int m_lkf_n_updates;
+
+
       // | ------------------ LPF related variables ----------------- |
 
       /*  //{ */
@@ -269,15 +286,26 @@ namespace balloon_filter
       /* RHEIV related methods //{ */
       
       rheiv::theta_t fit_plane(const boost::circular_buffer<pos_t>& points, const boost::circular_buffer<cov_t>& covs);
+      void reset_rheiv_estimate();
       
       //}
 
       /* UKF related methods //{ */
-      std::optional<UKF::statecov_t> predict_ukf_estimate(const ros::Time& to_stamp, const theta_t& plane_theta);
+      UKF::statecov_t predict_ukf_estimate(const UKF::statecov_t& lkf_estimate, const double dt, const theta_t& plane_theta, const double ball_speed);
       void update_ukf_estimate(const pos_cov_t& measurement, const ros::Time& stamp, const theta_t& plane_theta);
       std::optional<UKF::statecov_t> estimate_ukf_initial_state(const theta_t& plane_theta);
       void init_ukf_estimate(const ros::Time& stamp, const theta_t& plane_theta);
-      std::vector<std::pair<UKF::x_t, ros::Time>> predict_states(const UKF::statecov_t initial_statecov, const ros::Time& initial_timestamp, const theta_t& plane_theta, const double prediction_horizon, const double prediction_step);
+      std::vector<std::pair<UKF::x_t, ros::Time>> predict_ukf_states(const UKF::statecov_t initial_statecov, const ros::Time& initial_timestamp, const theta_t& plane_theta, const double prediction_horizon, const double prediction_step);
+      void reset_ukf_estimate();
+      //}
+
+      /* LKF related methods //{ */
+      LKF::statecov_t predict_lkf_estimate(const LKF::statecov_t& lkf_estimate, const double dt);
+      void update_lkf_estimate(const pos_cov_t& measurement, const ros::Time& stamp);
+      std::optional<LKF::statecov_t> estimate_lkf_initial_state();
+      void init_lkf_estimate(const ros::Time& stamp);
+      std::vector<std::pair<LKF::x_t, ros::Time>> predict_lkf_states(const LKF::statecov_t initial_statecov, const ros::Time& initial_timestamp, const double prediction_horizon, const double prediction_step);
+      void reset_lkf_estimate();
       //}
 
       /* LPF related methods //{ */
@@ -306,8 +334,6 @@ namespace balloon_filter
       std::vector<pos_cov_t> message_to_positions(const detections_t& balloon_msg);
 
       void reset_estimates();
-      void reset_ukf_estimate();
-      void reset_rheiv_estimate();
       bool reset_estimates_callback([[maybe_unused]] balloon_filter::ResetEstimates::Request& req, balloon_filter::ResetEstimates::Response& resp);
       void load_dynparams(drcfg_t cfg);
 
