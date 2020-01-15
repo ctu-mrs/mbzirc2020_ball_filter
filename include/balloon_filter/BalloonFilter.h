@@ -133,13 +133,14 @@ namespace balloon_filter
       ros::Duration m_ukf_init_history_duration;
       UKF::x_t m_ukf_process_std;
       UKF::x_t m_ukf_init_std;
-      double m_ukf_curvature_threshold;
+      double m_ukf_min_radius;
       double m_ukf_prediction_horizon;
       double m_ukf_prediction_step;
 
       ros::Duration m_lkf_init_history_duration;
       LKF::x_t m_lkf_process_std;
       LKF::x_t m_lkf_init_std;
+      double m_lkf_max_speed_err;
       double m_lkf_prediction_horizon;
       double m_lkf_prediction_step;
 
@@ -315,8 +316,10 @@ namespace balloon_filter
       
       //}
 
-      pos_t get_pos(const UKF::x_t& x);
-      pos_cov_t get_pos_cov(const UKF::statecov_t& statecov);
+      template <class T>
+      pos_t get_pos(const T& x);
+      template <class T>
+      pos_cov_t get_pos_cov(const T& statecov);
 
       geometry_msgs::PoseWithCovarianceStamped to_output_message(const pos_cov_t& estimate, const std_msgs::Header& header);
       visualization_msgs::MarkerArray to_output_message(const theta_t& plane_theta, const std_msgs::Header& header, const pos_t& origin);

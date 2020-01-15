@@ -12,12 +12,15 @@ namespace balloon_filter
   
       // transform the message to usable measurement format
       std::vector<pos_cov_t> measurements = message_to_positions(detections_msg);
+
+      /* choose one or none valid measurement to use //{ */
+      
       if (m_prev_measurements.empty())
       {
         m_prev_measurements.push_back({measurements, detections_msg.header.stamp});
         return;
       }
-  
+      
       const auto [prev_measurements, prev_measurements_stamp] = find_closest_dt(m_prev_measurements, detections_msg.header.stamp, m_meas_filt_desired_dt);
       const double dt = (detections_msg.header.stamp - prev_measurements_stamp).toSec();
       ROS_INFO_THROTTLE(1.0, "[BalloonFilter]: Using detection with %.2fs dt.", dt);
@@ -31,7 +34,7 @@ namespace balloon_filter
       const auto chosen_meas_prev = chosen_meass_opt.value().first;
       const auto chosen_meas = chosen_meass_opt.value().second;
   
-      /* publish the used measurement for debugging and visualisation purposes //{ */
+      /* publish the chosen measurement for debugging and visualisation purposes //{ */
       {
         std_msgs::Header header;
         header.frame_id = m_world_frame_id;
@@ -88,10 +91,14 @@ namespace balloon_filter
       //}
   
       add_rheiv_data(chosen_meas.pos, chosen_meas.cov, detections_msg.header.stamp);
+      
+      //}
   
       // copy the latest plane fit
       const auto [plane_theta_valid, plane_theta] = get_mutexed(m_rheiv_theta_mtx, m_rheiv_theta_valid, m_rheiv_theta);
   
+      /* try to publish plane debug visualization markers //{ */
+      
       if (plane_theta_valid && (m_pub_plane_dbg.getNumSubscribers() > 0 || m_pub_plane_dbg2.getNumSubscribers()))
       {
         std_msgs::Header header;
@@ -102,10 +109,16 @@ namespace balloon_filter
         if (m_pub_plane_dbg2.getNumSubscribers())
           m_pub_plane_dbg2.publish(to_output_message2(plane_theta, header, get_pos(m_ukf_estimate.x)));
       }
+      
+      //}
   
+      /* update the UKF if possible //{ */
+      
       // check if we have all data that is needed
       if (plane_theta_valid)
       {
+        /* update the UKF //{ */
+      
         if (m_ukf_estimate_exists)
         {
           update_ukf_estimate(chosen_meas, detections_msg.header.stamp, plane_theta);
@@ -115,9 +128,9 @@ namespace balloon_filter
           init_ukf_estimate(detections_msg.header.stamp, plane_theta);
           lpf_reset(m_ukf_estimate.x, detections_msg.header.stamp);
         }
-  
+      
         /* publish the filtered curvature //{ */
-  
+      
         {
           const auto filtered = lpf_filter_states(m_ukf_estimate.x, detections_msg.header.stamp);
           mrs_msgs::Float64Stamped msg;
@@ -125,9 +138,11 @@ namespace balloon_filter
           msg.value = filtered;
           m_pub_lpf.publish(msg);
         }
-  
+      
         //}
-  
+      
+      
+        //}
       } else
       {
         if (!plane_theta_valid)
@@ -139,9 +154,24 @@ namespace balloon_filter
           ROS_WARN_STREAM_THROTTLE(MSG_THROTTLE, "[UKF] Got empty detection message, cannot update UKF!");
         }
       }  // if (!measurements.empty() && plane_theta_valid)
+      
+      //}
+  
+      /* update the LKF //{ */
+      
+      if (m_lkf_estimate_exists)
+      {
+        update_lkf_estimate(chosen_meas, detections_msg.header.stamp);
+      }
+      else
+      {
+        init_lkf_estimate(detections_msg.header.stamp);
+      }
+      
+      //}
   
       ros::Duration del = ros::Time::now() - detections_msg.header.stamp;
-      ROS_INFO_STREAM_THROTTLE(MSG_THROTTLE, "[UKF]: delay (from image acquisition): " << del.toSec() * 1000.0 << "ms");
+      ROS_INFO_STREAM_THROTTLE(MSG_THROTTLE, "[KF]: delay (from image acquisition): " << del.toSec() * 1000.0 << "ms");
       /* ROS_INFO("[%s]: New data processed          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^", m_node_name.c_str()); */
     } else
     {
@@ -161,14 +191,18 @@ namespace balloon_filter
     if (m_sh_balloons_bfx->new_data())
       process_detections(*m_sh_balloons_bfx->get_data());
 
+    const auto lkf_last_update = get_mutexed(m_lkf_estimate_mtx, m_lkf_last_update);
+    if ((ros::Time::now() - lkf_last_update).toSec() >= m_max_time_since_update)
+      reset_lkf_estimate();
+
     const auto ukf_last_update = get_mutexed(m_ukf_estimate_mtx, m_ukf_last_update);
     if ((ros::Time::now() - ukf_last_update).toSec() >= m_max_time_since_update)
-    {
       reset_ukf_estimate();
-    }
 
     if (m_ukf_estimate_exists && m_ukf_n_updates > m_min_updates_to_confirm)
     {
+      /* publish the current estimate accorrding to UKF //{ */
+      
       const auto [plane_theta_valid, plane_theta] = get_mutexed(m_rheiv_theta_mtx, m_rheiv_theta_valid, m_rheiv_theta);
       if (plane_theta_valid)
       {
@@ -177,7 +211,7 @@ namespace balloon_filter
         header.stamp = ros::Time::now();
         const double dt = (header.stamp - m_ukf_last_update).toSec();
         auto cur_estimate = predict_ukf_estimate(m_ukf_estimate, dt, plane_theta, ball_speed_at_time(m_ukf_last_update));
-
+      
         Eigen::IOFormat short_fmt(3);
         cur_estimate.x.format(short_fmt);
         ROS_WARN_STREAM_THROTTLE(MSG_THROTTLE, "[UKF]: Current UKF prediction:" << std::endl
@@ -185,19 +219,50 @@ namespace balloon_filter
                                                                                 << "[" << cur_estimate.x.transpose() << "]");
         const auto cur_pos_cov = get_pos_cov(cur_estimate);
         m_pub_chosen_balloon.publish(to_output_message(cur_pos_cov, header));
-
+      
         // if the absolute estimated curvature exceeds the user-set threshold, reset it
         const auto curv = std::abs(cur_estimate.x(ukf::x::c));
-        if (curv > m_ukf_curvature_threshold)
+        if (curv > 0.0)
         {
-          reset_ukf_estimate();
-          ROS_WARN("[UKF]: UKF curvature estimate exceeded the threshold (%.2f > %.2f), resetting the UKF!", curv, m_ukf_curvature_threshold);
+          const auto radius = 1.0/curv;
+          if (radius < m_ukf_min_radius)
+          {
+            reset_ukf_estimate();
+            ROS_WARN("[UKF]: UKF radius (1/%.2f) estimate is under the threshold (%.2f > %.2f), resetting the UKF!", curv, radius, m_ukf_min_radius);
+          }
         }
       }
+      
+      //}
     }
     else if (m_lkf_estimate_exists && m_lkf_n_updates > m_min_updates_to_confirm)
     {
+      /* publish the current estimate according to LKF //{ */
       
+      std_msgs::Header header;
+      header.frame_id = m_world_frame_id;
+      header.stamp = ros::Time::now();
+      const double dt = (header.stamp - m_lkf_last_update).toSec();
+      auto cur_estimate = predict_lkf_estimate(m_lkf_estimate, dt);
+      
+      Eigen::IOFormat short_fmt(3);
+      cur_estimate.x.format(short_fmt);
+      ROS_WARN_STREAM_THROTTLE(MSG_THROTTLE, "[LKF]: Current LKF prediction:" << std::endl
+                                                                              << "[\tx\t\ty\t\tz\t\tdx\t\tdy\t\tdz\t]" << std::endl
+                                                                              << "[" << cur_estimate.x.transpose() << "]");
+      const auto cur_pos_cov = get_pos_cov(cur_estimate);
+      m_pub_chosen_balloon.publish(to_output_message(cur_pos_cov, header));
+      
+      // if the absolute estimated curvature exceeds the user-set threshold, reset it
+      const auto speed = cur_estimate.x.block<3, 1>(3, 0).norm();
+      const auto speed_err = std::abs(speed - ball_speed_at_time(header.stamp));
+      if (speed_err > m_lkf_max_speed_err)
+      {
+        reset_lkf_estimate();
+        ROS_WARN("[LKF]: LKF speed estimate error exceeded the threshold (%.2f > %.2f), resetting the LKF!", speed_err, m_lkf_max_speed_err);
+      }
+      
+      //}
     }
   }
   //}
@@ -748,6 +813,7 @@ namespace balloon_filter
   /* reset_estimates() method //{ */
   void BalloonFilter::reset_estimates()
   {
+    reset_lkf_estimate();
     reset_ukf_estimate();
     reset_rheiv_estimate();
   }
@@ -843,18 +909,20 @@ namespace balloon_filter
   //}
 
   /* get_pos() method //{ */
-  pos_t BalloonFilter::get_pos(const UKF::x_t& x)
+  template <class T>
+  pos_t BalloonFilter::get_pos(const T& x)
   {
-    return x.block<3, 1>(0, 0);
+    return x.template block<3, 1>(0, 0);
   }
   //}
 
   /* get_pos_cov() method //{ */
-  pos_cov_t BalloonFilter::get_pos_cov(const UKF::statecov_t& statecov)
+  template <class T>
+  pos_cov_t BalloonFilter::get_pos_cov(const T& statecov)
   {
     pos_cov_t ret;
     ret.pos = get_pos(statecov.x);
-    ret.cov = statecov.P.block<3, 3>(0, 0);
+    ret.cov = statecov.P.template block<3, 3>(0, 0);
     return ret;
   }
   //}
@@ -1324,7 +1392,7 @@ namespace balloon_filter
     m_min_updates_to_confirm = cfg.min_updates_to_confirm;
 
     m_ukf_prediction_horizon = cfg.ukf__prediction_horizon;
-    m_ukf_curvature_threshold = cfg.ukf__curvature_threshold;
+    m_ukf_min_radius = cfg.ukf__min_radius;
 
     m_ukf_process_std(ukf::x::x) = m_ukf_process_std(ukf::x::y) = m_ukf_process_std(ukf::x::z) = cfg.ukf__process_std__position;
     m_ukf_process_std(ukf::x::yaw) = cfg.ukf__process_std__yaw;
@@ -1334,6 +1402,8 @@ namespace balloon_filter
     m_ukf_init_std(ukf::x::yaw) = cfg.ukf__init_std__yaw;
     /* m_init_std(ukf::x_s) = cfg.init_std__speed; */
     m_ukf_init_std(ukf::x::c) = cfg.ukf__init_std__curvature;
+
+    m_lkf_max_speed_err = cfg.lkf__max_speed_err;
 
     m_lkf_process_std(lkf::x::x) = m_lkf_process_std(lkf::x::y) = m_lkf_process_std(lkf::x::z) = cfg.ukf__process_std__position;
     m_lkf_process_std(lkf::x::dx) = m_lkf_process_std(lkf::x::dy) = m_lkf_process_std(lkf::x::dz) = cfg.ukf__process_std__speed;
