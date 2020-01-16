@@ -141,7 +141,6 @@ namespace balloon_filter
       
         //}
       
-      
         //}
       } else
       {
@@ -378,41 +377,49 @@ namespace balloon_filter
 
     if (ukf_estimate_exists && ukf_n_updates > m_min_updates_to_confirm && plane_theta_valid)
     {
+      /* publish UKF prediction, if available //{ */
+      
       const auto predictions = predict_ukf_states(ukf_estimate, ukf_last_update, plane_theta, m_ukf_prediction_horizon, m_ukf_prediction_step);
       balloon_filter::BallPrediction message;
       message.header.frame_id = m_world_frame_id;
       message.header.stamp = ukf_last_update;
-
+      
       balloon_filter::Plane fitted_plane = to_output_message(plane_theta);
       balloon_filter::UKFState ukf_state = to_output_message(ukf_estimate);
       balloon_filter::FilterState filter_state;
       nav_msgs::Path predicted_path = to_output_message(predictions, message.header, plane_theta);
-
+      
       filter_state.fitted_plane = fitted_plane;
       filter_state.ukf_state = ukf_state;
       message.filter_state = filter_state;
       message.predicted_path = predicted_path;
-
+      
       m_pub_pred_path_dbg.publish(predicted_path);
       m_pub_ball_prediction.publish(message);
+      
+      //}
     }
     else if (lkf_estimate_exists && lkf_n_updates > m_min_updates_to_confirm)
     {
+      /* if UKF prediction is not available, use LKF, if possible //{ */
+      
       const auto predictions = predict_lkf_states(lkf_estimate, lkf_last_update, m_lkf_prediction_horizon, m_lkf_prediction_step);
       balloon_filter::BallPrediction message;
       message.header.frame_id = m_world_frame_id;
       message.header.stamp = lkf_last_update;
-
+      
       balloon_filter::Plane fitted_plane = to_output_message(plane_theta);
       balloon_filter::FilterState filter_state;
       nav_msgs::Path predicted_path = to_output_message(predictions, message.header);
-
+      
       filter_state.fitted_plane = fitted_plane;
       message.filter_state = filter_state;
       message.predicted_path = predicted_path;
-
+      
       m_pub_pred_path_dbg.publish(predicted_path);
       m_pub_ball_prediction.publish(message);
+      
+      //}
     }
   }
   //}
