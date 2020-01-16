@@ -12,7 +12,7 @@ namespace balloon_filter
         x = 0,  // 3D x-coordinate of the ball position
         y,      // 3D y-coordinate of the ball position
         z,      // 3D z-coordinate of the ball position
-        dx = 0, // 3D x-coordinate of the ball speed
+        dx,     // 3D x-coordinate of the ball speed
         dy,     // 3D y-coordinate of the ball speed
         dz,     // 3D z-coordinate of the ball speed
         LENGTH

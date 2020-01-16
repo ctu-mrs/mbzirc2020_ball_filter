@@ -137,6 +137,7 @@ namespace balloon_filter
       double m_ukf_prediction_horizon;
       double m_ukf_prediction_step;
 
+      int m_lkf_min_init_points;
       ros::Duration m_lkf_init_history_duration;
       LKF::x_t m_lkf_process_std;
       LKF::x_t m_lkf_init_std;
@@ -325,6 +326,7 @@ namespace balloon_filter
       visualization_msgs::MarkerArray to_output_message(const theta_t& plane_theta, const std_msgs::Header& header, const pos_t& origin);
       geometry_msgs::PoseStamped to_output_message2(const theta_t& plane_theta, const std_msgs::Header& header, const pos_t& origin);
       nav_msgs::Path to_output_message(const std::vector<std::pair<UKF::x_t, ros::Time>>& predictions, const std_msgs::Header& header, const theta_t& plane_theta);
+      nav_msgs::Path to_output_message(const std::vector<std::pair<LKF::x_t, ros::Time>>& predictions, const std_msgs::Header& header);
       sensor_msgs::PointCloud2 to_output_message(const boost::circular_buffer<pos_t>& points, const std_msgs::Header& header);
       balloon_filter::PlaneStamped to_output_message(const theta_t& plane_theta, const std_msgs::Header& header);
       balloon_filter::UKFState to_output_message(const UKF::statecov_t& ukf_statecov);

@@ -255,7 +255,9 @@ namespace balloon_filter
       
       // if the absolute estimated curvature exceeds the user-set threshold, reset it
       const auto speed = cur_estimate.x.block<3, 1>(3, 0).norm();
-      const auto speed_err = std::abs(speed - ball_speed_at_time(header.stamp));
+      const auto exp_speed = ball_speed_at_time(header.stamp);
+      const auto speed_err = std::abs(speed - exp_speed);
+      ROS_INFO_THROTTLE(1.0, "[LKF]: Current LKF speed estimate is %.2fm/s (expected: %.2f)!", speed, exp_speed);
       if (speed_err > m_lkf_max_speed_err)
       {
         reset_lkf_estimate();
@@ -370,8 +372,10 @@ namespace balloon_filter
   /* prediction_loop() method //{ */
   void BalloonFilter::prediction_loop([[maybe_unused]] const ros::TimerEvent& evt)
   {
+    const auto [lkf_estimate_exists, lkf_estimate, lkf_last_update, lkf_n_updates] = mrs_lib::get_mutexed(m_lkf_estimate_mtx, m_lkf_estimate_exists, m_lkf_estimate, m_lkf_last_update, m_lkf_n_updates);
     const auto [ukf_estimate_exists, ukf_estimate, ukf_last_update, ukf_n_updates] = mrs_lib::get_mutexed(m_ukf_estimate_mtx, m_ukf_estimate_exists, m_ukf_estimate, m_ukf_last_update, m_ukf_n_updates);
     const auto [plane_theta_valid, plane_theta] = mrs_lib::get_mutexed(m_rheiv_theta_mtx, m_rheiv_theta_valid, m_rheiv_theta);
+
     if (ukf_estimate_exists && ukf_n_updates > m_min_updates_to_confirm && plane_theta_valid)
     {
       const auto predictions = predict_ukf_states(ukf_estimate, ukf_last_update, plane_theta, m_ukf_prediction_horizon, m_ukf_prediction_step);
@@ -386,6 +390,24 @@ namespace balloon_filter
 
       filter_state.fitted_plane = fitted_plane;
       filter_state.ukf_state = ukf_state;
+      message.filter_state = filter_state;
+      message.predicted_path = predicted_path;
+
+      m_pub_pred_path_dbg.publish(predicted_path);
+      m_pub_ball_prediction.publish(message);
+    }
+    else if (lkf_estimate_exists && lkf_n_updates > m_min_updates_to_confirm)
+    {
+      const auto predictions = predict_lkf_states(lkf_estimate, lkf_last_update, m_lkf_prediction_horizon, m_lkf_prediction_step);
+      balloon_filter::BallPrediction message;
+      message.header.frame_id = m_world_frame_id;
+      message.header.stamp = lkf_last_update;
+
+      balloon_filter::Plane fitted_plane = to_output_message(plane_theta);
+      balloon_filter::FilterState filter_state;
+      nav_msgs::Path predicted_path = to_output_message(predictions, message.header);
+
+      filter_state.fitted_plane = fitted_plane;
       message.filter_state = filter_state;
       message.predicted_path = predicted_path;
 
@@ -614,7 +636,7 @@ namespace balloon_filter
   {
     auto [lkf_estimate_exists, lkf_estimate, lkf_last_update, lkf_n_updates] = mrs_lib::get_mutexed(m_lkf_estimate_mtx, m_lkf_estimate_exists, m_lkf_estimate, m_lkf_last_update, m_lkf_n_updates);
 
-    ROS_INFO_THROTTLE(MSG_THROTTLE, "[lkf]: Updating current estimate using point [%.2f, %.2f, %.2f]", measurement.pos.x(), measurement.pos.y(),
+    ROS_INFO_THROTTLE(MSG_THROTTLE, "[LKF]: Updating current estimate using point [%.2f, %.2f, %.2f]", measurement.pos.x(), measurement.pos.y(),
                       measurement.pos.z());
     const double dt = (stamp - lkf_last_update).toSec();
     if (dt < 0.0)
@@ -643,6 +665,11 @@ namespace balloon_filter
     assert(rheiv_pts.size() == rheiv_stamps.size());
     assert(!rheiv_pts.empty());
     const int n_pts = rheiv_pts.size();
+    if (n_pts < m_lkf_min_init_points)
+    {
+      ROS_INFO_THROTTLE(1.0, "[LKF]: Not enough points for LKF initialization: %d/%d", n_pts, m_lkf_min_init_points);
+      return std::nullopt;
+    }
   
     ros::Time cur_time = ros::Time::now();
     ros::Time last_stamp;
@@ -664,23 +691,20 @@ namespace balloon_filter
       ROS_ERROR("[BalloonFilter]: No recent points available for initial state estimation. Newest point is %.2fs old, need at most %.2fs.", (cur_time - rheiv_stamps.back()).toSec(), m_lkf_init_history_duration.toSec());
       return std::nullopt;
     }
-    ROS_INFO("[lkf]: Trying to initialize lkf using %lu/%i points.", used_meass.size(), n_pts);
+    ROS_INFO("[LKF]: Trying to initialize lkf using %lu/%i points.", used_meass.size(), n_pts);
   
     LKF::statecov_t statecov;
     ros::Time prev_stamp;
     bool statecov_initd = false;
+    bool speed_initd = false;
 
     for (int it = used_meass.size()-1; it >= 0; it--)
     {
       const auto [cur_pt, cur_cov, cur_stamp] = used_meass.at(it);
       if (!statecov_initd)
       {
-        statecov.x(lkf::x::x) = cur_pt.x();
-        statecov.x(lkf::x::y) = cur_pt.y();
-        statecov.x(lkf::x::z) = cur_pt.z();
-        statecov.x(lkf::x::dx) = 0.0;
-        statecov.x(lkf::x::dy) = 0.0;
-        statecov.x(lkf::x::dz) = 0.0;
+        statecov.x = LKF::x_t::Zero();
+        statecov.x.block<3, 1>(0, 0) = cur_pt;
         statecov.P = m_lkf_init_std.asDiagonal();
         statecov.P.block<3, 3>(lkf::x::x, lkf::x::x) = cur_cov;
         prev_stamp = cur_stamp;
@@ -689,9 +713,16 @@ namespace balloon_filter
       else
       {
         const double dt = (cur_stamp - prev_stamp).toSec();
-        /* assert(dt >= 0.0); */
         if (dt < 0.0)
           continue;
+        if (!speed_initd)
+        {
+          const pos_t prev_pos = get_pos(statecov.x);
+          const pos_t cur_pos = cur_pt;
+          const pos_t cur_spd = (cur_pos - prev_pos)/dt;
+          statecov.x.block<3, 1>(3, 0) = cur_spd;
+          speed_initd = true;
+        }
         statecov = predict_lkf_estimate(statecov, dt);
         statecov = m_lkf.correct(statecov, cur_pt, cur_cov);
         prev_stamp = cur_stamp;
@@ -708,9 +739,10 @@ namespace balloon_filter
     if (init_statecov_opt.has_value())
     {
       const auto init_statecov = init_statecov_opt.value();
-      ROS_INFO("[lkf]: Initializing estimate using point [%.2f, %.2f, %.2f], speed [%.2f, %.2f, %.2f]",
+      ROS_INFO("[LKF]: Initializing estimate using point [%.2f, %.2f, %.2f], velocity [%.2f, %.2f, %.2f] (speed: %.2f)",
           init_statecov.x(lkf::x::x), init_statecov.x(lkf::x::y), init_statecov.x(lkf::x::z),
-          init_statecov.x(lkf::x::dx), init_statecov.x(lkf::x::dy), init_statecov.x(lkf::x::dz)
+          init_statecov.x(lkf::x::dx), init_statecov.x(lkf::x::dy), init_statecov.x(lkf::x::dz),
+          init_statecov.x.block<3, 1>(3, 0).norm()
           );
 
       set_mutexed(m_lkf_estimate_mtx,
@@ -892,11 +924,13 @@ namespace balloon_filter
     {
       if (max_loglikelihood > loglikelihood_threshold)
       {
-        ROS_INFO("[BalloonFilter]: Picking measurement with likelihood %.2f", max_loglikelihood);
+        ROS_INFO_THROTTLE(1.0, "[BalloonFilter]: Picking measurement with likelihood %.2f", max_loglikelihood);
+        ROS_DEBUG("[BalloonFilter]: Picking measurement with likelihood %.2f", max_loglikelihood);
       }
       else
       {
-        ROS_INFO("[BalloonFilter]: No measurement sufficiently likely (most likely is %.2f)", max_loglikelihood);
+        ROS_INFO_THROTTLE(1.0, "[BalloonFilter]: No measurement sufficiently likely (most likely is %.2f)", max_loglikelihood);
+        ROS_DEBUG("[BalloonFilter]: No measurement sufficiently likely (most likely is %.2f)", max_loglikelihood);
         return std::nullopt;
       }
     } else
@@ -1120,6 +1154,36 @@ namespace balloon_filter
       pose.pose.orientation.y = ori_quat.y();
       pose.pose.orientation.z = ori_quat.z();
       pose.pose.orientation.w = ori_quat.w();
+      ret.poses.push_back(pose);
+    }
+
+    return ret;
+  }
+  //}
+
+  /* nav_msgs::Path //{ */
+  nav_msgs::Path BalloonFilter::to_output_message(const std::vector<std::pair<LKF::x_t, ros::Time>>& predictions, const std_msgs::Header& header)
+  {
+    nav_msgs::Path ret;
+    ret.header = header;
+    ret.poses.reserve(predictions.size());
+
+    for (const auto& pred : predictions)
+    {
+      const LKF::x_t& state = pred.first;
+      const ros::Time& timestamp = pred.second;
+      const mrs_lib::vec3_t velocity = state.block<3, 1>(3, 0);
+      const quat_t quat = mrs_lib::quaternion_between(mrs_lib::vec3_t(1.0, 0.0, 0.0), velocity);
+      geometry_msgs::PoseStamped pose;
+      pose.header = header;
+      pose.header.stamp = timestamp;
+      pose.pose.position.x = state.x();
+      pose.pose.position.y = state.y();
+      pose.pose.position.z = state.z();
+      pose.pose.orientation.x = quat.x();
+      pose.pose.orientation.y = quat.y();
+      pose.pose.orientation.z = quat.z();
+      pose.pose.orientation.w = quat.w();
       ret.poses.push_back(pose);
     }
 
@@ -1391,26 +1455,33 @@ namespace balloon_filter
     m_max_time_since_update = cfg.max_time_since_update;
     m_min_updates_to_confirm = cfg.min_updates_to_confirm;
 
+    /* UKF-related //{ */
+    
     m_ukf_prediction_horizon = cfg.ukf__prediction_horizon;
     m_ukf_min_radius = cfg.ukf__min_radius;
-
+    
     m_ukf_process_std(ukf::x::x) = m_ukf_process_std(ukf::x::y) = m_ukf_process_std(ukf::x::z) = cfg.ukf__process_std__position;
     m_ukf_process_std(ukf::x::yaw) = cfg.ukf__process_std__yaw;
     /* m_ukf_process_std(ukf::x_s) = cfg.process_std__speed; */
     m_ukf_process_std(ukf::x::c) = cfg.ukf__process_std__curvature;
-
+    
     m_ukf_init_std(ukf::x::yaw) = cfg.ukf__init_std__yaw;
     /* m_init_std(ukf::x_s) = cfg.init_std__speed; */
     m_ukf_init_std(ukf::x::c) = cfg.ukf__init_std__curvature;
+    
+    //}
 
+    /* LKF-related //{ */
+    
+    m_lkf_prediction_horizon = cfg.lkf__prediction_horizon;
     m_lkf_max_speed_err = cfg.lkf__max_speed_err;
-
-    m_lkf_process_std(lkf::x::x) = m_lkf_process_std(lkf::x::y) = m_lkf_process_std(lkf::x::z) = cfg.ukf__process_std__position;
-    m_lkf_process_std(lkf::x::dx) = m_lkf_process_std(lkf::x::dy) = m_lkf_process_std(lkf::x::dz) = cfg.ukf__process_std__speed;
-
-    m_lkf_init_std(lkf::x::dx) = cfg.ukf__init_std__speed;
-    m_lkf_init_std(lkf::x::dy) = cfg.ukf__init_std__speed;
-    m_lkf_init_std(lkf::x::dz) = cfg.ukf__init_std__speed;
+    
+    m_lkf_process_std(lkf::x::x) = m_lkf_process_std(lkf::x::y) = m_lkf_process_std(lkf::x::z) = cfg.lkf__process_std__position;
+    m_lkf_process_std(lkf::x::dx) = m_lkf_process_std(lkf::x::dy) = m_lkf_process_std(lkf::x::dz) = cfg.lkf__process_std__velocity;
+    
+    m_lkf_init_std(lkf::x::dx) = m_lkf_init_std(lkf::x::dy) = m_lkf_init_std(lkf::x::dz) = cfg.lkf__init_std__velocity;
+    
+    //}
 
     m_lpf_cutoff_freq = cfg.lpf__cutoff_freq__curvature;
   }
@@ -1437,22 +1508,26 @@ namespace balloon_filter
     const int measurements_buffer_length = pl.load_param2<int>("meas_filt/buffer_length");
 
     const double planning_period = pl.load_param2<double>("planning_period");
+    const double prediction_period = pl.load_param2<double>("prediction_period");
+    pl.load_param("world_frame_id", m_world_frame_id);
+    pl.load_param("uav_frame_id", m_uav_frame_id);
+    pl.load_param("ball_speed1", m_ball_speed1);
+    pl.load_param("ball_speed2", m_ball_speed2);
+
+    const ros::Duration ball_speed_change_after = pl.load_param2("ball_speed_change_after");
+    // TODO: set the time in some smarter manner
+    m_ball_speed_change = ros::Time::now() + ball_speed_change_after;
     pl.load_param("rheiv/fitting_period", m_rheiv_fitting_period);
     pl.load_param("rheiv/min_points", m_rheiv_min_pts);
     pl.load_param("rheiv/max_points", m_rheiv_max_pts);
     pl.load_param("rheiv/visualization_size", m_rheiv_visualization_size);
 
-    pl.load_param("world_frame_id", m_world_frame_id);
-    pl.load_param("uav_frame_id", m_uav_frame_id);
-    pl.load_param("ball_speed1", m_ball_speed1);
-    pl.load_param("ball_speed2", m_ball_speed2);
-    const ros::Duration ball_speed_change_after = pl.load_param2("ball_speed_change_after");
-    // TODO: set the time in some smarter manner
-    m_ball_speed_change = ros::Time::now() + ball_speed_change_after;
-
     pl.load_param("ukf/init_history_duration", m_ukf_init_history_duration);
     pl.load_param("ukf/prediction_step", m_ukf_prediction_step);
-    const double prediction_period = pl.load_param2<double>("ukf/prediction_period");
+
+    pl.load_param("lkf/min_init_points", m_lkf_min_init_points);
+    pl.load_param("lkf/init_history_duration", m_lkf_init_history_duration);
+    pl.load_param("lkf/prediction_step", m_lkf_prediction_step);
 
     if (!pl.loaded_successfully())
     {
@@ -1514,9 +1589,9 @@ namespace balloon_filter
     }
 
     {
-      const LKF::A_t A = LKF::A_t::Ones();
+      const LKF::A_t A = LKF::A_t::Identity();
       const LKF::B_t B;
-      const LKF::H_t H = LKF::H_t::Ones();
+      const LKF::H_t H = LKF::H_t::Identity();
       m_lkf = LKF(A, B, H);
     }
 
