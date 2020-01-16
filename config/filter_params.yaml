@@ -11,7 +11,7 @@ meas_filt:
   desired_dt: 0.5 # seconds
   buffer_length: 10
   covariance_inflation: 1.0 # how much to inflate the measurement covariance when choosing measurements
-  loglikelihood_threshold: -5.0
+  loglikelihood_threshold: -50.0
 
 lkf:
   min_init_points: 5
@@ -35,8 +35,8 @@ ukf:
 
   process_std:
     position: 5.0
-    yaw: 0.01
-    curvature: 0.001
+    yaw: 0.1
+    curvature: 0.01
 
   init_std:
     yaw: 2.0
