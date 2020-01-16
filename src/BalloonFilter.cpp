@@ -375,52 +375,54 @@ namespace balloon_filter
     const auto [ukf_estimate_exists, ukf_estimate, ukf_last_update, ukf_n_updates] = mrs_lib::get_mutexed(m_ukf_estimate_mtx, m_ukf_estimate_exists, m_ukf_estimate, m_ukf_last_update, m_ukf_n_updates);
     const auto [plane_theta_valid, plane_theta] = mrs_lib::get_mutexed(m_rheiv_theta_mtx, m_rheiv_theta_valid, m_rheiv_theta);
 
-    if (ukf_estimate_exists && ukf_n_updates > m_min_updates_to_confirm && plane_theta_valid)
+    balloon_filter::BallPrediction message;
+    message.header.frame_id = m_world_frame_id;
+    message.header.stamp = ros::Time::now();
+    
+    balloon_filter::Plane fitted_plane;
+    balloon_filter::FilterState filter_state;
+    filter_state.ukf_state.valid = false;
+    filter_state.lkf_state.valid = false;
+    nav_msgs::Path predicted_path;
+
+    if (lkf_estimate_exists && lkf_n_updates > m_min_updates_to_confirm)
     {
-      /* publish UKF prediction, if available //{ */
-      
-      const auto predictions = predict_ukf_states(ukf_estimate, ukf_last_update, plane_theta, m_ukf_prediction_horizon, m_ukf_prediction_step);
-      balloon_filter::BallPrediction message;
-      message.header.frame_id = m_world_frame_id;
-      message.header.stamp = ukf_last_update;
-      
-      balloon_filter::Plane fitted_plane = to_output_message(plane_theta);
-      balloon_filter::UKFState ukf_state = to_output_message(ukf_estimate);
-      balloon_filter::FilterState filter_state;
-      nav_msgs::Path predicted_path = to_output_message(predictions, message.header, plane_theta);
-      
-      filter_state.fitted_plane = fitted_plane;
-      filter_state.ukf_state = ukf_state;
-      message.filter_state = filter_state;
-      message.predicted_path = predicted_path;
-      
-      m_pub_pred_path_dbg.publish(predicted_path);
-      m_pub_ball_prediction.publish(message);
-      
-      //}
-    }
-    else if (lkf_estimate_exists && lkf_n_updates > m_min_updates_to_confirm)
-    {
-      /* if UKF prediction is not available, use LKF, if possible //{ */
+      /* use LKF by default, if available //{ */
       
       const auto predictions = predict_lkf_states(lkf_estimate, lkf_last_update, m_lkf_prediction_horizon, m_lkf_prediction_step);
-      balloon_filter::BallPrediction message;
-      message.header.frame_id = m_world_frame_id;
       message.header.stamp = lkf_last_update;
-      
-      balloon_filter::Plane fitted_plane = to_output_message(plane_theta);
-      balloon_filter::FilterState filter_state;
-      nav_msgs::Path predicted_path = to_output_message(predictions, message.header);
-      
-      filter_state.fitted_plane = fitted_plane;
-      message.filter_state = filter_state;
-      message.predicted_path = predicted_path;
-      
-      m_pub_pred_path_dbg.publish(predicted_path);
-      m_pub_ball_prediction.publish(message);
+      filter_state.lkf_state = to_output_message(lkf_estimate);
+      filter_state.lkf_state.valid = true;
+      predicted_path = to_output_message(predictions, message.header);
       
       //}
     }
+
+    if (ukf_estimate_exists && ukf_n_updates > m_min_updates_to_confirm && plane_theta_valid)
+    {
+      /* use the UKF prediction instead (more precise), if available //{ */
+      
+      const auto predictions = predict_ukf_states(ukf_estimate, ukf_last_update, plane_theta, m_ukf_prediction_horizon, m_ukf_prediction_step);
+      message.header.stamp = ukf_last_update;
+      filter_state.ukf_state = to_output_message(ukf_estimate);
+      filter_state.ukf_state.valid = true;
+      predicted_path = to_output_message(predictions, message.header, plane_theta);
+      
+      //}
+    }
+
+    if (plane_theta_valid)
+    {
+      fitted_plane = to_output_message(plane_theta);
+      fitted_plane.valid = true;
+    }
+    
+    filter_state.fitted_plane = fitted_plane;
+    message.filter_state = filter_state;
+    message.predicted_path = predicted_path;
+    
+    m_pub_pred_path_dbg.publish(predicted_path);
+    m_pub_ball_prediction.publish(message);
   }
   //}
 
@@ -1251,6 +1253,20 @@ namespace balloon_filter
     balloon_filter::PlaneStamped ret;
     ret.header = header;
     ret.plane = to_output_message(plane_theta);
+    return ret;
+  }
+  //}
+
+  /* balloon_filter::LKFState //{ */
+  balloon_filter::LKFState BalloonFilter::to_output_message(const LKF::statecov_t& lkf_statecov)
+  {
+    balloon_filter::LKFState ret;
+    ret.position.x = lkf_statecov.x(lkf::x::x);
+    ret.position.y = lkf_statecov.x(lkf::x::y);
+    ret.position.z = lkf_statecov.x(lkf::x::z);
+    ret.velocity.x = lkf_statecov.x(lkf::x::dx);
+    ret.velocity.y = lkf_statecov.x(lkf::x::dy);
+    ret.velocity.z = lkf_statecov.x(lkf::x::dz);
     return ret;
   }
   //}

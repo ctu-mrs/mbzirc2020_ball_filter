@@ -329,6 +329,7 @@ namespace balloon_filter
       nav_msgs::Path to_output_message(const std::vector<std::pair<LKF::x_t, ros::Time>>& predictions, const std_msgs::Header& header);
       sensor_msgs::PointCloud2 to_output_message(const boost::circular_buffer<pos_t>& points, const std_msgs::Header& header);
       balloon_filter::PlaneStamped to_output_message(const theta_t& plane_theta, const std_msgs::Header& header);
+      balloon_filter::LKFState to_output_message(const LKF::statecov_t& lkf_statecov);
       balloon_filter::UKFState to_output_message(const UKF::statecov_t& ukf_statecov);
       balloon_filter::Plane to_output_message(const rheiv::theta_t& plane_theta);
 

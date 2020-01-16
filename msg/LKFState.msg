@@ -1,5 +1,4 @@
 bool                    valid
 geometry_msgs/Vector3   position
-float64                 yaw
-float64                 curvature
+geometry_msgs/Vector3   velocity
 

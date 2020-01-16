@@ -38,6 +38,7 @@ add_service_files(
 add_message_files(
    FILES
    Plane.msg
+   LKFState.msg
    UKFState.msg
    FilterState.msg
    BallPrediction.msg
