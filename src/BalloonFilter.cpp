@@ -381,6 +381,7 @@ namespace balloon_filter
     
     balloon_filter::Plane fitted_plane;
     balloon_filter::FilterState filter_state;
+    filter_state.expected_speed = ball_speed_at_time(message.header.stamp);
     filter_state.ukf_state.valid = false;
     filter_state.lkf_state.valid = false;
     nav_msgs::Path predicted_path;
