@@ -28,14 +28,14 @@
       <remap from="~chosen_measurement" to="~chosen_measurement" />
       <remap from="~chosen_measurement_dbg" to="~chosen_measurement_dbg" />
 
-      <remap from="~fitted_plane_marker" to="~fitted_plane_marker />
-      <remap from="~fitted_plane_pose" to="~fitted_plane_pose />
-      <remap from="~fit_points" to="~fit_points />
-      <remap from="~fitted_plane" to="~fitted_plane />
-      <remap from="~ball_prediction" to="~ball_prediction />
-      <remap from="~predicted_path" to="~predicted_path />
+      <remap from="~fitted_plane_marker" to="~fitted_plane_marker" />
+      <remap from="~fitted_plane_pose" to="~fitted_plane_pose" />
+      <remap from="~fit_points" to="~fit_points" />
+      <remap from="~fitted_plane" to="~fitted_plane" />
+      <remap from="~ball_prediction" to="~ball_prediction" />
+      <remap from="~predicted_path" to="~predicted_path" />
 
-      <remap from="~low_pass_filtered" to="~low_pass_filtered/>
+      <remap from="~low_pass_filtered" to="~low_pass_filtered" />
 
     </node>
 
