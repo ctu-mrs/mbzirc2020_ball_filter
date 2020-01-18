@@ -41,7 +41,7 @@ namespace balloon_filter
         header.frame_id = m_world_frame_id;
         header.stamp = detections_msg.header.stamp;
 
-        /* publish the chosen measurement as the dedicated message //{ */
+        /* publish the chosen measurement as the dedicated message */
         m_pub_chosen_meas.publish(to_output_message(chosen_meas, header, detections_msg.camera_info));
 
         /* publish the chosen measurement as PoseWithCovarianceStamped for debugging and visualisation purposes */
@@ -1615,8 +1615,8 @@ namespace balloon_filter
     m_tf_listener_ptr = std::make_unique<tf2_ros::TransformListener>(m_tf_buffer, m_node_name);
     mrs_lib::SubscribeMgr smgr(nh);
     constexpr bool time_consistent = true;
-    m_sh_balloons = smgr.create_handler<detections_t, time_consistent>("balloon_detections", ros::Duration(5.0));
-    m_sh_balloons_bfx = smgr.create_handler<detections_t, time_consistent>("balloon_detections_bfx", ros::Duration(5.0));
+    m_sh_balloons = smgr.create_handler<detections_t, time_consistent>("detections", ros::Duration(5.0));
+    m_sh_balloons_bfx = smgr.create_handler<detections_t, time_consistent>("detections_bfx", ros::Duration(5.0));
 
     m_reset_estimates_server = nh.advertiseService("reset_estimates", &BalloonFilter::reset_estimates_callback, this);
     //}
@@ -1624,14 +1624,14 @@ namespace balloon_filter
     /* publishers //{ */
 
     m_pub_meas_filt_dbg = nh.advertise<sensor_msgs::PointCloud2>("measurement_filter", 1);
+    m_pub_chosen_meas = nh.advertise<balloon_filter::BallLocation>("chosen_measurement", 1);
+    m_pub_chosen_meas_dbg = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("chosen_measurement_dbg", 1);
 
     m_pub_plane_dbg = nh.advertise<visualization_msgs::MarkerArray>("fitted_plane_marker", 1);
     m_pub_plane_dbg2 = nh.advertise<geometry_msgs::PoseStamped>("fitted_plane_pose", 1);
     m_pub_used_pts = nh.advertise<sensor_msgs::PointCloud2>("fit_points", 1);
     m_pub_fitted_plane = nh.advertise<balloon_filter::PlaneStamped>("fitted_plane", 1);
 
-    m_pub_chosen_meas = nh.advertise<balloon_filter::BallLocation>("chosen_measurement", 1);
-    m_pub_chosen_meas_dbg = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("chosen_measurement_dbg", 1);
     m_pub_ball_prediction = nh.advertise<balloon_filter::BallPrediction>("ball_prediction", 1);
     m_pub_pred_path_dbg = nh.advertise<nav_msgs::Path>("predicted_path", 1);
 

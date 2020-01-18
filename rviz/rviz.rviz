@@ -8,6 +8,7 @@ Panels:
         - /frames, grids etc.1/TF1/Frames1
         - /uav1 trajectory1/Status1
         - /ball detection1
+        - /ball filtering1/detection used1
         - /ball GT1/Status1
         - /onboard camera1/Visibility1
       Splitter Ratio: 0.5
@@ -346,7 +347,7 @@ Visualization Manager:
           Shaft Length: 0.10000000149011612
           Shaft Radius: 0.10000000149011612
           Shape: Arrow
-          Topic: /uav1/balloon_filter/detection_used
+          Topic: /uav1/balloon_filter/chosen_measurement_dbg
           Unreliable: false
           Value: true
         - Alpha: 1
@@ -593,18 +594,18 @@ Visualization Manager:
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 20.436769485473633
-        Y: -25.293926239013672
+        X: 15.657663345336914
+        Y: -24.246129989624023
         Z: -1.976260682567954e-5
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.5253955125808716
+      Pitch: 0.6353950500488281
       Target Frame: <Fixed Frame>
       Value: XYOrbit (rviz)
-      Yaw: 6.2767333984375
+      Yaw: 0.08855732530355453
     Saved: ~
 Window Geometry:
   Displays:
