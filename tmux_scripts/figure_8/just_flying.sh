@@ -27,7 +27,7 @@ input=(
 '
   'Sensors' 'waitForRos; roslaunch mrs_general sensors.launch
 '
-  'Control' 'waitForRos; roslaunch mrs_general core.launch config_uav_manager:=./custom_configs/uav_manager.yaml config_constraint_manager:=./custom_configs/constraint_manager.yaml config_gain_manager:=./custom_configs/gain_manager.yaml config_mpc_tracker:=./custom_configs/mpc_tracker.yaml config_control_manager:=./custom_configs/control_manager.yaml
+  'Control' 'waitForRos; roslaunch mrs_general core.launch config_uav_manager:=./custom_configs/uav_manager.yaml config_constraint_manager:=./custom_configs/constraint_manager.yaml config_gain_manager:=./custom_configs/gain_manager.yaml config_mpc_tracker:=./custom_configs/mpc_tracker.yaml config_control_manager:=./custom_configs/control_manager.yaml config_odometry:=./custom_configs/odometry.yaml
 '
   'Nimbro' 'waitForRos; roslaunch mrs_general nimbro.launch
 '
@@ -39,10 +39,12 @@ input=(
   'Land' 'rosservice call /'"$UAV_NAME"'/uav_manager/land'
   'LandHome' 'rosservice call /'"$UAV_NAME"'/uav_manager/land_home'
   'E_hover' 'rosservice call /'"$UAV_NAME"'/control_manager/ehover'
-  'LoadTraj' 'waitForRos; roslaunch trajectory_loader multimaster_trajectories_loader.launch
+  'LoadTraj' 'waitForControl; roslaunch trajectory_loader multimaster_trajectories_loader.launch
 '
   'FlyToStart' 'waitForRos; roslaunch trajectory_loader multimaster_fly_to_start.launch'
-  'FlyToStart' 'waitForRos; roslaunch trajectory_loader multimaster_start_following.launch'
+  'StopGarmin' 'waitForRos; rosservice call /'"$UAV_NAME"'/odometry/toggle_garmin false'
+  'StartFollowing' 'waitForRos; roslaunch trajectory_loader multimaster_start_following.launch'
+  'Constraints' 'waitForRos; rosservice call /'"$UAV_NAME"'/constraint_manager/set_constraints figure8'
   'Show_odom' 'waitForRos; rostopic echo /'"$UAV_NAME"'/odometry/slow_odom
 '
   'Show_diag' 'waitForRos; rostopic echo /'"$UAV_NAME"'/odometry/diagnostics

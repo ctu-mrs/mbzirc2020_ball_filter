@@ -14,7 +14,7 @@ constraint_management:
   # those gains will be used automatically when a localization mode switches
   # and the current gains are not in the allowed list (next paragraphs)
   fallback_constraints:
-    GPS: "figure8"
+    GPS: "medium"
 
 figure8:
 
@@ -22,21 +22,21 @@ figure8:
     speed: 9.0
     acceleration: 5.0
     jerk: 10.0
-    snap: 20.0
+    snap: 10.0
 
   vertical:
 
     ascending:
-      speed: 2.0
-      acceleration: 1.0
-      jerk: 3.0
-      snap: 5.0
+      speed: 6.0
+      acceleration: 3.0
+      jerk: 10.0
+      snap: 10.0
 
     descending:
-      speed: 2.0
-      acceleration: 1.0
-      jerk: 3.0
-      snap: 5.0
+      speed: 6.0
+      acceleration: 3.0
+      jerk: 10.0
+      snap: 10.0
 
   yaw:
     speed: 2.0
