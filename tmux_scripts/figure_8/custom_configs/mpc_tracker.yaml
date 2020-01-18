@@ -1,3 +1,3 @@
 cvxgenMpc:
 
-  no_overshoots: false
+  no_overshoots: true
