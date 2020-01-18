@@ -51,6 +51,7 @@
 #include <balloon_filter/UKFState.h>
 #include <balloon_filter/BallPrediction.h>
 #include <balloon_filter/PlaneStamped.h>
+#include <balloon_filter/BallLocation.h>
 #include <object_detect/BallDetections.h>
 
 //}
@@ -165,8 +166,8 @@ namespace balloon_filter
       ros::Publisher m_pub_used_pts;
       ros::Publisher m_pub_fitted_plane;
 
-      ros::Publisher m_pub_chosen_balloon;
-      ros::Publisher m_pub_used_meas;
+      ros::Publisher m_pub_chosen_meas;
+      ros::Publisher m_pub_chosen_meas_dbg;
       ros::Publisher m_pub_ball_prediction;
       ros::Publisher m_pub_pred_path_dbg;
 
@@ -306,7 +307,7 @@ namespace balloon_filter
       void update_lkf_estimate(const pos_cov_t& measurement, const ros::Time& stamp);
       std::optional<LKF::statecov_t> estimate_lkf_initial_state();
       void init_lkf_estimate(const ros::Time& stamp);
-      std::vector<std::pair<LKF::x_t, ros::Time>> predict_lkf_states(const LKF::statecov_t initial_statecov, const ros::Time& initial_timestamp, const double prediction_horizon, const double prediction_step);
+      std::vector<std::pair<LKF::x_t, ros::Time>> predict_lkf_states(const LKF::statecov_t initial_statecov, const ros::Time& initial_timestamp, const double prediction_horizon, const double prediction_step, const double set_speed);
       void reset_lkf_estimate();
       //}
 
@@ -322,6 +323,7 @@ namespace balloon_filter
       template <class T>
       pos_cov_t get_pos_cov(const T& statecov);
 
+      balloon_filter::BallLocation to_output_message(const pos_cov_t& estimate, const std_msgs::Header& header, const sensor_msgs::CameraInfo& cinfo);
       geometry_msgs::PoseWithCovarianceStamped to_output_message(const pos_cov_t& estimate, const std_msgs::Header& header);
       visualization_msgs::MarkerArray to_output_message(const theta_t& plane_theta, const std_msgs::Header& header, const pos_t& origin);
       geometry_msgs::PoseStamped to_output_message2(const theta_t& plane_theta, const std_msgs::Header& header, const pos_t& origin);

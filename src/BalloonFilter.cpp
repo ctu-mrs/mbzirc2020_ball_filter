@@ -34,60 +34,71 @@ namespace balloon_filter
       const auto chosen_meas_prev = chosen_meass_opt.value().first;
       const auto chosen_meas = chosen_meass_opt.value().second;
   
-      /* publish the chosen measurement for debugging and visualisation purposes //{ */
+      /* publish the results //{ */
+      
       {
         std_msgs::Header header;
         header.frame_id = m_world_frame_id;
         header.stamp = detections_msg.header.stamp;
-        m_pub_used_meas.publish(to_output_message(chosen_meas, header));
-  
-        const size_t n_pts = measurements.size() + prev_measurements.size();
-        sensor_msgs::PointCloud2 ret;
-        ret.header = header;
-        ret.height = 1;
-        ret.width = n_pts;
-  
+
+        /* publish the chosen measurement as the dedicated message //{ */
+        m_pub_chosen_meas.publish(to_output_message(chosen_meas, header, detections_msg.camera_info));
+
+        /* publish the chosen measurement as PoseWithCovarianceStamped for debugging and visualisation purposes */
+        m_pub_chosen_meas_dbg.publish(to_output_message(chosen_meas, header));
+      
+        /* publish debug output of the measurement choosing filter //{ */
         {
-          // Prepare the PointCloud2
-          sensor_msgs::PointCloud2Modifier modifier(ret);
-          modifier.setPointCloud2Fields(4, "x", 1, sensor_msgs::PointField::FLOAT32,
-                                           "y", 1, sensor_msgs::PointField::FLOAT32,
-                                           "z", 1, sensor_msgs::PointField::FLOAT32,
-                                           "type", 1, sensor_msgs::PointField::INT32);
-          modifier.resize(n_pts);
-        }
-  
-        {
-          // Fill the PointCloud2
-          sensor_msgs::PointCloud2Iterator<float> iter_x(ret, "x");
-          sensor_msgs::PointCloud2Iterator<float> iter_y(ret, "y");
-          sensor_msgs::PointCloud2Iterator<float> iter_z(ret, "z");
-          sensor_msgs::PointCloud2Iterator<int32_t> iter_type(ret, "type");
-          for (size_t it = 0; it < measurements.size(); it++, ++iter_x, ++iter_y, ++iter_z, ++iter_type)
+          const size_t n_pts = measurements.size() + prev_measurements.size();
+          sensor_msgs::PointCloud2 ret;
+          ret.header = header;
+          ret.height = 1;
+          ret.width = n_pts;
+      
           {
-            const auto& pt = measurements.at(it);
-            *iter_x = pt.pos.x();
-            *iter_y = pt.pos.y();
-            *iter_z = pt.pos.z();
-            if (pt.pos == chosen_meas.pos && pt.cov == chosen_meas.cov)
-              *iter_type = 0;
-            else
-              *iter_type = 1;
+            // Prepare the PointCloud2
+            sensor_msgs::PointCloud2Modifier modifier(ret);
+            modifier.setPointCloud2Fields(4, "x", 1, sensor_msgs::PointField::FLOAT32,
+                                             "y", 1, sensor_msgs::PointField::FLOAT32,
+                                             "z", 1, sensor_msgs::PointField::FLOAT32,
+                                             "type", 1, sensor_msgs::PointField::INT32);
+            modifier.resize(n_pts);
           }
-          for (size_t it = 0; it < prev_measurements.size(); it++, ++iter_x, ++iter_y, ++iter_z, ++iter_type)
+      
           {
-            const auto& pt = prev_measurements.at(it);
-            *iter_x = pt.pos.x();
-            *iter_y = pt.pos.y();
-            *iter_z = pt.pos.z();
-            if (pt.pos == chosen_meas_prev.pos && pt.cov == chosen_meas_prev.cov)
-              *iter_type = 2;
-            else
-              *iter_type = 3;
+            // Fill the PointCloud2
+            sensor_msgs::PointCloud2Iterator<float> iter_x(ret, "x");
+            sensor_msgs::PointCloud2Iterator<float> iter_y(ret, "y");
+            sensor_msgs::PointCloud2Iterator<float> iter_z(ret, "z");
+            sensor_msgs::PointCloud2Iterator<int32_t> iter_type(ret, "type");
+            for (size_t it = 0; it < measurements.size(); it++, ++iter_x, ++iter_y, ++iter_z, ++iter_type)
+            {
+              const auto& pt = measurements.at(it);
+              *iter_x = pt.pos.x();
+              *iter_y = pt.pos.y();
+              *iter_z = pt.pos.z();
+              if (pt.pos == chosen_meas.pos && pt.cov == chosen_meas.cov)
+                *iter_type = 0;
+              else
+                *iter_type = 1;
+            }
+            for (size_t it = 0; it < prev_measurements.size(); it++, ++iter_x, ++iter_y, ++iter_z, ++iter_type)
+            {
+              const auto& pt = prev_measurements.at(it);
+              *iter_x = pt.pos.x();
+              *iter_y = pt.pos.y();
+              *iter_z = pt.pos.z();
+              if (pt.pos == chosen_meas_prev.pos && pt.cov == chosen_meas_prev.cov)
+                *iter_type = 2;
+              else
+                *iter_type = 3;
+            }
           }
+          m_pub_meas_filt_dbg.publish(ret);
         }
-        m_pub_meas_filt_dbg.publish(ret);
+        //}
       }
+      
       //}
   
       add_rheiv_data(chosen_meas.pos, chosen_meas.cov, detections_msg.header.stamp);
@@ -198,17 +209,14 @@ namespace balloon_filter
     if ((ros::Time::now() - ukf_last_update).toSec() >= m_max_time_since_update)
       reset_ukf_estimate();
 
-    if (m_ukf_estimate_exists && m_ukf_n_updates > m_min_updates_to_confirm)
+    if (m_ukf_estimate_exists)
     {
-      /* publish the current estimate accorrding to UKF //{ */
+      /* check if the current UKF estimate doesn't violate some thresholds, print it //{ */
       
       const auto [plane_theta_valid, plane_theta] = get_mutexed(m_rheiv_theta_mtx, m_rheiv_theta_valid, m_rheiv_theta);
       if (plane_theta_valid)
       {
-        std_msgs::Header header;
-        header.frame_id = m_world_frame_id;
-        header.stamp = ros::Time::now();
-        const double dt = (header.stamp - m_ukf_last_update).toSec();
+        const double dt = (ros::Time::now() - m_ukf_last_update).toSec();
         auto cur_estimate = predict_ukf_estimate(m_ukf_estimate, dt, plane_theta, ball_speed_at_time(m_ukf_last_update));
       
         Eigen::IOFormat short_fmt(3);
@@ -216,9 +224,7 @@ namespace balloon_filter
         ROS_WARN_STREAM_THROTTLE(MSG_THROTTLE, "[UKF]: Current UKF prediction:" << std::endl
                                                                                 << "[\tx\t\ty\t\tz\t\tyaw\t\tspd\t\tcur\t]" << std::endl
                                                                                 << "[" << cur_estimate.x.transpose() << "]");
-        const auto cur_pos_cov = get_pos_cov(cur_estimate);
-        m_pub_chosen_balloon.publish(to_output_message(cur_pos_cov, header));
-      
+        /* const auto cur_pos_cov = get_pos_cov(cur_estimate); */
         // if the absolute estimated curvature exceeds the user-set threshold, reset it
         const auto curv = std::abs(cur_estimate.x(ukf::x::c));
         if (curv > 0.0)
@@ -234,14 +240,12 @@ namespace balloon_filter
       
       //}
     }
-    else if (m_lkf_estimate_exists && m_lkf_n_updates > m_min_updates_to_confirm)
+    else if (m_lkf_estimate_exists)
     {
-      /* publish the current estimate according to LKF //{ */
+      /* check if the current LKF estimate doesn't violate some thresholds, print it //{ */
       
-      std_msgs::Header header;
-      header.frame_id = m_world_frame_id;
-      header.stamp = ros::Time::now();
-      const double dt = (header.stamp - m_lkf_last_update).toSec();
+      ros::Time cur_stamp = ros::Time::now();
+      const double dt = (cur_stamp - m_lkf_last_update).toSec();
       auto cur_estimate = predict_lkf_estimate(m_lkf_estimate, dt);
       
       Eigen::IOFormat short_fmt(3);
@@ -249,12 +253,10 @@ namespace balloon_filter
       ROS_WARN_STREAM_THROTTLE(MSG_THROTTLE, "[LKF]: Current LKF prediction:" << std::endl
                                                                               << "[\tx\t\ty\t\tz\t\tdx\t\tdy\t\tdz\t]" << std::endl
                                                                               << "[" << cur_estimate.x.transpose() << "]");
-      const auto cur_pos_cov = get_pos_cov(cur_estimate);
-      m_pub_chosen_balloon.publish(to_output_message(cur_pos_cov, header));
-      
+      /* const auto cur_pos_cov = get_pos_cov(cur_estimate); */
       // if the absolute estimated curvature exceeds the user-set threshold, reset it
       const auto speed = cur_estimate.x.block<3, 1>(3, 0).norm();
-      const auto exp_speed = ball_speed_at_time(header.stamp);
+      const auto exp_speed = ball_speed_at_time(cur_stamp);
       const auto speed_err = std::abs(speed - exp_speed);
       ROS_INFO_THROTTLE(1.0, "[LKF]: Current LKF speed estimate is %.2fm/s (expected: %.2f)!", speed, exp_speed);
       if (speed_err > m_lkf_max_speed_err)
@@ -381,7 +383,8 @@ namespace balloon_filter
     
     balloon_filter::Plane fitted_plane;
     balloon_filter::FilterState filter_state;
-    filter_state.expected_speed = ball_speed_at_time(message.header.stamp);
+    const double expected_speed = ball_speed_at_time(message.header.stamp);
+    filter_state.expected_speed = expected_speed;
     filter_state.ukf_state.valid = false;
     filter_state.lkf_state.valid = false;
     nav_msgs::Path predicted_path;
@@ -390,7 +393,7 @@ namespace balloon_filter
     {
       /* use LKF by default, if available //{ */
       
-      const auto predictions = predict_lkf_states(lkf_estimate, lkf_last_update, m_lkf_prediction_horizon, m_lkf_prediction_step);
+      const auto predictions = predict_lkf_states(lkf_estimate, lkf_last_update, m_lkf_prediction_horizon, m_lkf_prediction_step, expected_speed);
       message.header.stamp = lkf_last_update;
       filter_state.lkf_state = to_output_message(lkf_estimate);
       filter_state.lkf_state.valid = true;
@@ -776,13 +779,20 @@ namespace balloon_filter
   std::vector<std::pair<LKF::x_t, ros::Time>> BalloonFilter::predict_lkf_states(const LKF::statecov_t initial_statecov,
                                                                                 const ros::Time& initial_timestamp,
                                                                                 const double prediction_horizon,
-                                                                                const double prediction_step)
+                                                                                const double prediction_step,
+                                                                                const double set_speed = std::numeric_limits<double>::quiet_NaN())
   {
     assert(prediction_step > 0.0);
     assert(prediction_horizon > 0.0);
     const int n_pts = round(prediction_horizon / prediction_step);
 
     LKF::statecov_t statecov = initial_statecov;
+    if (!std::isnan(set_speed))
+    {
+      const double cur_speed = statecov.x.block<3, 1>(3, 0).norm();
+      statecov.x.block<3, 1>(3, 0) *= set_speed/cur_speed;
+      statecov.P.block<3, 3>(3, 3) *= set_speed/cur_speed;
+    }
     ros::Time timestamp = initial_timestamp;
     std::vector<std::pair<LKF::x_t, ros::Time>> ret;
     ret.reserve(n_pts);
@@ -972,6 +982,39 @@ namespace balloon_filter
   //}
 
   /* to_output_message() method overloads //{ */
+
+  /* balloon_filter::BallLocation //{ */
+  balloon_filter::BallLocation BalloonFilter::to_output_message(const pos_cov_t& estimate, const std_msgs::Header& header, const sensor_msgs::CameraInfo& cinfo)
+  {
+    balloon_filter::BallLocation ret;
+
+    ret.header = header;
+    ret.camera_info = cinfo;
+    ret.detection.pose.position.x = estimate.pos.x();
+    ret.detection.pose.position.y = estimate.pos.y();
+    ret.detection.pose.position.z = estimate.pos.z();
+    ret.detection.pose.orientation.x = 0.0;
+    ret.detection.pose.orientation.y = 0.0;
+    ret.detection.pose.orientation.z = 0.0;
+    ret.detection.pose.orientation.w = 1.0;
+
+    for (int r = 0; r < 6; r++)
+    {
+      for (int c = 0; c < 6; c++)
+      {
+        if (r < 3 && c < 3)
+          ret.detection.covariance[r * 6 + c] = estimate.cov(r, c);
+        else if (r == c)
+          ret.detection.covariance[r * 6 + c] = 666;
+        else
+          ret.detection.covariance[r * 6 + c] = 0.0;
+      }
+    }
+
+    return ret;
+  }
+  //}
+
   /* geometry_msgs::PoseWithCovarianceStamped //{ */
   geometry_msgs::PoseWithCovarianceStamped BalloonFilter::to_output_message(const pos_cov_t& estimate, const std_msgs::Header& header)
   {
@@ -1587,8 +1630,8 @@ namespace balloon_filter
     m_pub_used_pts = nh.advertise<sensor_msgs::PointCloud2>("fit_points", 1);
     m_pub_fitted_plane = nh.advertise<balloon_filter::PlaneStamped>("fitted_plane", 1);
 
-    m_pub_chosen_balloon = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("filtered_position", 1);
-    m_pub_used_meas = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("detection_used", 1);
+    m_pub_chosen_meas = nh.advertise<balloon_filter::BallLocation>("chosen_measurement", 1);
+    m_pub_chosen_meas_dbg = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("chosen_measurement_dbg", 1);
     m_pub_ball_prediction = nh.advertise<balloon_filter::BallPrediction>("ball_prediction", 1);
     m_pub_pred_path_dbg = nh.advertise<nav_msgs::Path>("predicted_path", 1);
 
@@ -1607,31 +1650,43 @@ namespace balloon_filter
     }
 
     {
+      /* initialize UKF //{ */
+      
       UKF::transition_model_t tra_model(ukf::tra_model_f);
       UKF::observation_model_t obs_model(ukf::obs_model_f);
       m_ukf = UKF(ukf::tra_model_f, ukf::obs_model_f);
+      
+      //}
     }
 
     {
+      /* initialize LKF //{ */
+      
       const LKF::A_t A = LKF::A_t::Identity();
       const LKF::B_t B;
       const LKF::H_t H = LKF::H_t::Identity();
       m_lkf = LKF(A, B, H);
+      
+      //}
     }
 
     {
+      /* initialize RHEIV (the plane-fitting algorithm) //{ */
+      
       const rheiv::f_z_t f_z(rheiv::f_z_f);
       const rheiv::dzdx_t dzdx = rheiv::dzdx_t::Identity();
       m_rheiv = RHEIV(f_z, dzdx, 1e-15, 1e4);
-
+      
       /* const rheiv_conic::f_z_t f_z_conic(rheiv_conic::f_z_f); */
       /* const rheiv_conic::f_dzdx_t f_dzdx_conic (rheiv_conic::f_dzdx_f); */
       /* m_rheiv_conic = RHEIV_conic(f_z_conic, f_dzdx_conic, 1e-9, 1e3); */
-
+      
       m_rheiv_pts.set_capacity(m_rheiv_max_pts);
       m_rheiv_covs.set_capacity(m_rheiv_max_pts);
       m_rheiv_stamps.set_capacity(m_rheiv_max_pts);
       m_rheiv_theta_valid = false;
+      
+      //}
     }
 
     reset_estimates();
