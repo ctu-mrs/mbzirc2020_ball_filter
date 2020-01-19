@@ -629,14 +629,29 @@ namespace balloon_filter
   /* predict_lkf_estimate() method //{ */
   LKF::statecov_t BalloonFilter::predict_lkf_estimate(const LKF::statecov_t& lkf_estimate, const double dt)
   {
-    const LKF::A_t A((LKF::A_t() <<
-          1, 0, 0, dt, 0, 0,
-          0, 1, 0, 0, dt, 0,
-          0, 0, 1, 0, 0, dt,
-          0, 0, 0, 1, 0, 0,
-          0, 0, 0, 0, 1, 0,
-          0, 0, 0, 0, 0, 1).finished());
-    const LKF::Q_t Q = dt * m_lkf_process_std.asDiagonal();
+    LKF::A_t A(m_lkf_n_states, m_lkf_n_states);
+    if (m_lkf_use_acceleration)
+      A <<
+            1, 0, 0, dt, 0, 0, 0.5*dt*dt, 0, 0,
+            0, 1, 0, 0, dt, 0, 0, 0.5*dt*dt, 0,
+            0, 0, 1, 0, 0, dt, 0, 0, 0.5*dt*dt,
+            0, 0, 0, 1, 0, 0, 1*dt, 0, 0,
+            0, 0, 0, 0, 1, 0, 0, 1*dt, 0,
+            0, 0, 0, 0, 0, 1, 0, 0, 1*dt,
+            0, 0, 0, 0, 0, 0, 1, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 1, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 1
+              ;
+    else
+      A <<
+            1, 0, 0, dt, 0, 0,
+            0, 1, 0, 0, dt, 0,
+            0, 0, 1, 0, 0, dt,
+            0, 0, 0, 1, 0, 0,
+            0, 0, 0, 0, 1, 0,
+            0, 0, 0, 0, 0, 1
+              ;
+    const LKF::Q_t Q = dt * LKF::Q_t(m_lkf_process_std.asDiagonal()).block(0, 0, m_lkf_n_states, m_lkf_n_states);
     const LKF::u_t u;
     m_lkf.A = A;
     const auto ret = m_lkf.predict(lkf_estimate, u, Q, dt);
@@ -716,10 +731,10 @@ namespace balloon_filter
       const auto [cur_pt, cur_cov, cur_stamp] = used_meass.at(it);
       if (!statecov_initd)
       {
-        statecov.x = LKF::x_t::Zero();
+        statecov.x = LKF::x_t::Zero(m_lkf_n_states, 1);
         statecov.x.block<3, 1>(0, 0) = cur_pt;
-        statecov.P = m_lkf_init_std.asDiagonal();
-        statecov.P.block<3, 3>(lkf::x::x, lkf::x::x) = cur_cov;
+        statecov.P = LKF::P_t(m_lkf_init_std.asDiagonal()).block(0, 0, m_lkf_n_states, m_lkf_n_states);
+        statecov.P.block<3, 3>(0, 0) = cur_cov;
         prev_stamp = cur_stamp;
         statecov_initd = true;
       }
@@ -752,11 +767,20 @@ namespace balloon_filter
     if (init_statecov_opt.has_value())
     {
       const auto init_statecov = init_statecov_opt.value();
-      ROS_INFO("[LKF]: Initializing estimate using point [%.2f, %.2f, %.2f], velocity [%.2f, %.2f, %.2f] (speed: %.2f)",
-          init_statecov.x(lkf::x::x), init_statecov.x(lkf::x::y), init_statecov.x(lkf::x::z),
-          init_statecov.x(lkf::x::dx), init_statecov.x(lkf::x::dy), init_statecov.x(lkf::x::dz),
-          init_statecov.x.block<3, 1>(3, 0).norm()
-          );
+      if (m_lkf_use_acceleration)
+        ROS_INFO("[LKF]: Initializing estimate using point [%.2f, %.2f, %.2f], velocity [%.2f, %.2f, %.2f], acceleration [%.2f, %.2f, %.2f]\n speed: %.2f\n accel: %.2f",
+            init_statecov.x(lkf::x::x), init_statecov.x(lkf::x::y), init_statecov.x(lkf::x::z),
+            init_statecov.x(lkf::x::dx), init_statecov.x(lkf::x::dy), init_statecov.x(lkf::x::dz),
+            init_statecov.x(lkf::x::ddx), init_statecov.x(lkf::x::ddy), init_statecov.x(lkf::x::ddz),
+            init_statecov.x.block<3, 1>(3, 0).norm(),
+            init_statecov.x.block<3, 1>(6, 0).norm()
+            );
+      else
+        ROS_INFO("[LKF]: Initializing estimate using point [%.2f, %.2f, %.2f], velocity [%.2f, %.2f, %.2f]\n speed: %.2f",
+            init_statecov.x(lkf::x::x), init_statecov.x(lkf::x::y), init_statecov.x(lkf::x::z),
+            init_statecov.x(lkf::x::dx), init_statecov.x(lkf::x::dy), init_statecov.x(lkf::x::dz),
+            init_statecov.x.block<3, 1>(3, 0).norm()
+            );
 
       set_mutexed(m_lkf_estimate_mtx,
           std::make_tuple(      init_statecov,  true,                  stamp,             1),
@@ -1545,8 +1569,12 @@ namespace balloon_filter
     
     m_lkf_process_std(lkf::x::x) = m_lkf_process_std(lkf::x::y) = m_lkf_process_std(lkf::x::z) = cfg.lkf__process_std__position;
     m_lkf_process_std(lkf::x::dx) = m_lkf_process_std(lkf::x::dy) = m_lkf_process_std(lkf::x::dz) = cfg.lkf__process_std__velocity;
+    if (m_lkf_use_acceleration)
+      m_lkf_process_std(lkf::x::ddx) = m_lkf_process_std(lkf::x::ddy) = m_lkf_process_std(lkf::x::ddz) = cfg.lkf__process_std__acceleration;
     
     m_lkf_init_std(lkf::x::dx) = m_lkf_init_std(lkf::x::dy) = m_lkf_init_std(lkf::x::dz) = cfg.lkf__init_std__velocity;
+    if (m_lkf_use_acceleration)
+      m_lkf_init_std(lkf::x::ddx) = m_lkf_init_std(lkf::x::ddy) = m_lkf_init_std(lkf::x::ddz) = cfg.lkf__init_std__acceleration;
     
     //}
 
@@ -1592,6 +1620,7 @@ namespace balloon_filter
     pl.load_param("ukf/init_history_duration", m_ukf_init_history_duration);
     pl.load_param("ukf/prediction_step", m_ukf_prediction_step);
 
+    pl.load_param("lkf/use_acceleration", m_lkf_use_acceleration);
     pl.load_param("lkf/min_init_points", m_lkf_min_init_points);
     pl.load_param("lkf/init_history_duration", m_lkf_init_history_duration);
     pl.load_param("lkf/prediction_step", m_lkf_prediction_step);
@@ -1645,33 +1674,37 @@ namespace balloon_filter
 
     //}
 
+    /* initialize UKF //{ */
     {
-      m_prev_measurements.set_capacity(measurements_buffer_length);
-    }
-
-    {
-      /* initialize UKF //{ */
       
       UKF::transition_model_t tra_model(ukf::tra_model_f);
       UKF::observation_model_t obs_model(ukf::obs_model_f);
       m_ukf = UKF(ukf::tra_model_f, ukf::obs_model_f);
       
-      //}
     }
+    //}
 
+    /* initialize LKF //{ */
     {
-      /* initialize LKF //{ */
       
-      const LKF::A_t A = LKF::A_t::Identity();
+      if (m_lkf_use_acceleration)
+        m_lkf_n_states = 9;
+      else
+        m_lkf_n_states = 6;
+      const LKF::A_t A;
       const LKF::B_t B;
-      const LKF::H_t H = LKF::H_t::Identity();
+      const LKF::H_t H = LKF::H_t::Identity(lkf::n_measurements, m_lkf_n_states);
       m_lkf = LKF(A, B, H);
+      m_lkf_process_std = Eigen::VectorXd(m_lkf_n_states);
+      m_lkf_init_std = Eigen::VectorXd(m_lkf_n_states);
+      m_lkf_estimate.x = Eigen::VectorXd(m_lkf_n_states);
+      m_lkf_estimate.P = Eigen::MatrixXd(m_lkf_n_states, m_lkf_n_states);
       
-      //}
     }
+    //}
 
+    /* initialize RHEIV (the plane-fitting algorithm) //{ */
     {
-      /* initialize RHEIV (the plane-fitting algorithm) //{ */
       
       const rheiv::f_z_t f_z(rheiv::f_z_f);
       const rheiv::dzdx_t dzdx = rheiv::dzdx_t::Identity();
@@ -1686,9 +1719,10 @@ namespace balloon_filter
       m_rheiv_stamps.set_capacity(m_rheiv_max_pts);
       m_rheiv_theta_valid = false;
       
-      //}
     }
+    //}
 
+    m_prev_measurements.set_capacity(measurements_buffer_length);
     reset_estimates();
     m_is_initialized = true;
 

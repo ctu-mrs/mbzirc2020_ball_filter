@@ -138,6 +138,8 @@ namespace balloon_filter
       double m_ukf_prediction_horizon;
       double m_ukf_prediction_step;
 
+      bool m_lkf_use_acceleration;
+      int m_lkf_n_states;
       int m_lkf_min_init_points;
       ros::Duration m_lkf_init_history_duration;
       LKF::x_t m_lkf_process_std;

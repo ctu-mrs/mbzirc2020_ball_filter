@@ -15,6 +15,9 @@ namespace balloon_filter
         dx,     // 3D x-coordinate of the ball speed
         dy,     // 3D y-coordinate of the ball speed
         dz,     // 3D z-coordinate of the ball speed
+        ddx,    // 3D x-coordinate of the ball acceleration
+        ddy,    // 3D y-coordinate of the ball acceleration
+        ddz,    // 3D z-coordinate of the ball acceleration
         LENGTH
       };
     }
@@ -40,7 +43,7 @@ namespace balloon_filter
       };
     }
 
-    constexpr int n_states = x::LENGTH;
+    constexpr int n_states = -1;
     constexpr int n_inputs = u::LENGTH;
     constexpr int n_measurements = z::LENGTH;
     using LKF = mrs_lib::LKF<n_states, n_inputs, n_measurements>;
