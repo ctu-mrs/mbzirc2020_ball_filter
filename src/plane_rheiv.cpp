@@ -198,5 +198,5 @@ int main()
 }
 //}
 
-#endif // COMPILE_PLANE_UKF_TEST
+#endif // COMPILE_PLANE_RHEIV_TEST
 

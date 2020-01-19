@@ -79,6 +79,7 @@ include_directories(
 add_library(BalloonFilter
   src/eight_ukf.cpp
   src/plane_rheiv.cpp
+  src/vel_lkf.cpp
   # src/conic_rheiv.cpp
   src/BalloonFilter.cpp
   )

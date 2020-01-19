@@ -1,7 +1,7 @@
 planning_period: 0.01 # seconds
 prediction_period: 0.05 # seconds
 max_time_since_update: 2.0 # seconds
-min_updates_to_confirm: 10
+min_updates_to_confirm: 8
 
 ball_speed1: 5.0 # metres per second
 ball_speed2: 5.0 # metres per second
@@ -21,7 +21,7 @@ lkf:
   init_history_duration: 10.0 # seconds
 
   process_std:
-    position: 5.0
+    position: 2.0
     velocity: 8.0
 
   init_std:
