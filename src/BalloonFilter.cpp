@@ -1744,7 +1744,7 @@ namespace balloon_filter
   bool BalloonFilter::reset_estimates_callback([[maybe_unused]] balloon_filter::ResetEstimates::Request& req, balloon_filter::ResetEstimates::Response& resp)
   {
     reset_estimates();
-    resp.message = "Current estimate was reset.";
+    resp.message = "Current estimates were reset.";
     resp.success = true;
     return true;
   }

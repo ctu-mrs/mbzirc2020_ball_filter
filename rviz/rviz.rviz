@@ -7,10 +7,8 @@ Panels:
         - /Global Options1
         - /frames, grids etc.1/TF1/Frames1
         - /uav1 trajectory1/Status1
-        - /ball detection1
         - /ball filtering1/detection used1
-        - /ball GT1/Status1
-        - /onboard camera1/Visibility1
+        - /planning1
       Splitter Ratio: 0.5
     Tree Height: 694
   - Class: rviz/Selection
@@ -286,6 +284,14 @@ Visualization Manager:
           Use Fixed Frame: true
           Use rainbow: true
           Value: true
+        - Class: rviz/Marker
+          Enabled: true
+          Marker Topic: /uav1/camera_fov_marker/camera_fov_marker
+          Name: camera FOV marker
+          Namespaces:
+            {}
+          Queue Size: 100
+          Value: true
       Enabled: true
       Name: ball detection
     - Class: rviz/Group
@@ -462,166 +468,40 @@ Visualization Manager:
           Name: plane fitting
       Enabled: true
       Name: ball filtering
-    - Alpha: 0.699999988079071
-      Autocompute Intensity Bounds: true
-      Autocompute Value Bounds:
-        Max Value: 11.099456787109375
-        Min Value: 0
-        Value: true
-      Axis: Z
-      Channel Name: intensity
-      Class: rviz/PointCloud
-      Color: 0; 255; 0
-      Color Transformer: FlatColor
-      Decay Time: 0
-      Enabled: true
-      Invert Rainbow: false
-      Max Color: 255; 255; 255
-      Max Intensity: 4096
-      Min Color: 0; 0; 0
-      Min Intensity: 0
-      Name: ball GT
-      Position Transformer: XYZ
-      Queue Size: 10
-      Selectable: true
-      Size (Pixels): 3
-      Size (m): 0.07500000298023224
-      Style: Flat Squares
-      Topic: /balloon_attacher/balloon_positions
-      Unreliable: false
-      Use Fixed Frame: true
-      Use rainbow: true
-      Value: true
-    - Class: rviz/Camera
-      Enabled: false
-      Image Rendering: background and overlay
-      Image Topic: /uav1/rs_d435/color/image_raw
-      Name: onboard camera
-      Overlay Alpha: 0.5
-      Queue Size: 2
-      Transport Hint: compressed
-      Unreliable: false
-      Value: false
-      Visibility:
-        Value: true
-        ball GT: false
-        ball detection:
-          Value: true
-          debug image: true
-          debug image bfx: true
-          detected balls: true
-          detected balls bfx: true
-        ball filtering:
-          "":
-            "": true
+    - Class: rviz/Group
+      Displays:
+        - Alpha: 1
+          Autocompute Intensity Bounds: true
+          Autocompute Value Bounds:
+            Max Value: 10
+            Min Value: -10
             Value: true
+          Axis: Z
+          Channel Name: intensity
+          Class: rviz/PointCloud2
+          Color: 255; 0; 0
+          Color Transformer: FlatColor
+          Decay Time: 0
+          Enabled: true
+          Invert Rainbow: false
+          Max Color: 255; 0; 0
+          Max Intensity: 4096
+          Min Color: 0; 0; 0
+          Min Intensity: 0
+          Name: remembered points
+          Position Transformer: XYZ
+          Queue Size: 10
+          Selectable: true
+          Size (Pixels): 3
+          Size (m): 0.07500000298023224
+          Style: Spheres
+          Topic: /uav1/balloon_planner/ball_positions
+          Unreliable: false
+          Use Fixed Frame: true
+          Use rainbow: true
           Value: true
-        camera FOV marker: false
-        frames, grids etc.:
-          Grid 1m: true
-          Grid 5m: true
-          TF: true
-          Value: true
-          main frame: true
-        uav1: false
-        uav1 odom: false
-        uav1 trajectory: false
-        uav2 cmd odom: true
-        uav2 odom: false
-        uav2 trajectory: false
-      Zoom Factor: 1
-    - Class: rviz/Marker
       Enabled: true
-      Marker Topic: /uav1/camera_fov_marker/camera_fov_marker
-      Name: camera FOV marker
-      Namespaces:
-        {}
-      Queue Size: 100
-      Value: true
-    - Alpha: 1
-      Class: rviz/RobotModel
-      Collision Enabled: false
-      Enabled: false
-      Links:
-        All Links Enabled: true
-        Expand Joint Details: false
-        Expand Link Details: false
-        Expand Tree: false
-        Link Tree Style: Links in Alphabetic Order
-      Name: uav1
-      Robot Description: /uav1/robot_model
-      TF Prefix: ""
-      Update Interval: 0
-      Value: false
-      Visual Enabled: true
-    - Angle Tolerance: 0.009999999776482582
-      Class: rviz/Odometry
-      Covariance:
-        Orientation:
-          Alpha: 0.5
-          Color: 255; 255; 127
-          Color Style: Unique
-          Frame: Local
-          Offset: 1
-          Scale: 1
-          Value: true
-        Position:
-          Alpha: 0.30000001192092896
-          Color: 204; 51; 204
-          Scale: 1
-          Value: true
-        Value: false
-      Enabled: true
-      Keep: 1
-      Name: uav1 cmd odom
-      Position Tolerance: 0.009999999776482582
-      Shape:
-        Alpha: 1
-        Axes Length: 1
-        Axes Radius: 0.10000000149011612
-        Color: 255; 25; 0
-        Head Length: 0.30000001192092896
-        Head Radius: 0.10000000149011612
-        Shaft Length: 1
-        Shaft Radius: 0.05000000074505806
-        Value: Arrow
-      Topic: /uav1/control_manager/cmd_odom
-      Unreliable: false
-      Value: true
-    - Angle Tolerance: 0.009999999776482582
-      Class: rviz/Odometry
-      Covariance:
-        Orientation:
-          Alpha: 0.5
-          Color: 255; 255; 127
-          Color Style: Unique
-          Frame: Local
-          Offset: 1
-          Scale: 1
-          Value: true
-        Position:
-          Alpha: 0.30000001192092896
-          Color: 204; 51; 204
-          Scale: 1
-          Value: true
-        Value: false
-      Enabled: true
-      Keep: 1
-      Name: uav2 cmd odom
-      Position Tolerance: 0.009999999776482582
-      Shape:
-        Alpha: 1
-        Axes Length: 1
-        Axes Radius: 0.10000000149011612
-        Color: 255; 25; 0
-        Head Length: 0.30000001192092896
-        Head Radius: 0.10000000149011612
-        Shaft Length: 1
-        Shaft Radius: 0.05000000074505806
-        Value: Arrow
-      Topic: /uav2/control_manager/cmd_odom
-      Unreliable: false
-      Value: true
+      Name: planning
   Enabled: true
   Global Options:
     Background Color: 55; 55; 55
@@ -650,25 +530,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/XYOrbit
-      Distance: 37.762489318847656
+      Distance: 23.87699317932129
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 5.969904899597168
-        Y: -23.414052963256836
-        Z: 3.577490133466199e-6
+        X: 21.68535804748535
+        Y: -30.229665756225586
+        Z: 1.8985707356478088e-5
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.4203985035419464
+      Pitch: 0.6853958368301392
       Target Frame: <Fixed Frame>
       Value: XYOrbit (rviz)
-      Yaw: 5.678583145141602
+      Yaw: 5.5384931564331055
     Saved: ~
 Window Geometry:
   Displays:
@@ -691,6 +571,4 @@ Window Geometry:
   debug image:
     collapsed: false
   debug image bfx:
-    collapsed: false
-  onboard camera:
     collapsed: false
