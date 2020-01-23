@@ -97,8 +97,9 @@ def main():
     lin_cutoff = rospy.get_param("~pattern/lin_cutoff", 5)    # metres
 
     # parameters of transformation of the eight pattern
-    pattern_rotation_ypr = rospy.get_param("~pattern/rotation_ypr", [0.0, 0.1, 0.1])          # radians
-    pattern_translation = rospy.get_param("~pattern/translation", [5.0, -3.0, 9.0])           # metres
+    pattern_rotation_ypr = rospy.get_param("~pattern/rotation_ypr", [0.0, 0.1, 0.1])        # radians
+    pattern_translation = rospy.get_param("~pattern/translation", [5.0, -3.0, 9.0])         # metres
+    pattern_yaw = rospy.get_param("~pattern/yaw", 0.0)                                      # radians
 
     # parameters of the sampling
     sample_spd = rospy.get_param("~sampling/speed", 5.0) # metres per second
@@ -214,7 +215,7 @@ def main():
     save_data(plane_params, plane_output_filename, ["a", "b", "c", "d"])
 
     # data = np.hstack([samples3D, yaws, speeds, curvatures])
-    yaws[:] = 0.0
+    yaws[:] = pattern_yaw
     data = np.hstack([samples3D, yaws])
     col_names = ["x", "y", "z", "yaw", "s", "c"]
     if not save_header:
