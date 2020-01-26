@@ -1624,6 +1624,7 @@ namespace balloon_filter
     pl.load_param("rheiv/min_points", m_rheiv_min_pts);
     pl.load_param("rheiv/max_points", m_rheiv_max_pts);
     pl.load_param("rheiv/visualization_size", m_rheiv_visualization_size);
+    const double rheiv_timeout_s = pl.load_param2<double>("rheiv/timeout");
 
     pl.load_param("ukf/init_history_duration", m_ukf_init_history_duration);
     pl.load_param("ukf/prediction_step", m_ukf_prediction_step);
@@ -1716,7 +1717,8 @@ namespace balloon_filter
       
       const rheiv::f_z_t f_z(rheiv::f_z_f);
       const rheiv::dzdx_t dzdx = rheiv::dzdx_t::Identity();
-      m_rheiv = RHEIV(f_z, dzdx, 1e-15, 1e4);
+      const std::chrono::duration<double> rheiv_timeout(rheiv_timeout_s*1000);
+      m_rheiv = RHEIV(f_z, dzdx, 1e-15, 1e4, rheiv_timeout);
       
       /* const rheiv_conic::f_z_t f_z_conic(rheiv_conic::f_z_f); */
       /* const rheiv_conic::f_dzdx_t f_dzdx_conic (rheiv_conic::f_dzdx_f); */
