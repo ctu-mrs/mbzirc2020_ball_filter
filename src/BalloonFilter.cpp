@@ -193,6 +193,14 @@ namespace balloon_filter
   /* main_loop() method //{ */
   void BalloonFilter::main_loop([[maybe_unused]] const ros::TimerEvent& evt)
   {
+    static ros::Time prev_stamp = ros::Time::now();
+    const ros::Time cur_stamp = ros::Time::now();
+    if (cur_stamp < prev_stamp)
+    {
+      ROS_WARN("[BalloonFilter]: Detected jump back in time, resetting.");
+      reset_estimates();
+    }
+    prev_stamp = cur_stamp;
     load_dynparams(m_drmgr_ptr->config);
 
     if (m_sh_balloons->new_data())
@@ -1643,7 +1651,7 @@ namespace balloon_filter
 
     m_tf_listener_ptr = std::make_unique<tf2_ros::TransformListener>(m_tf_buffer, m_node_name);
     mrs_lib::SubscribeMgr smgr(nh);
-    constexpr bool time_consistent = true;
+    constexpr bool time_consistent = false;
     m_sh_balloons = smgr.create_handler<detections_t, time_consistent>("detections", ros::Duration(5.0));
     m_sh_balloons_bfx = smgr.create_handler<detections_t, time_consistent>("detections_bfx", ros::Duration(5.0));
 
