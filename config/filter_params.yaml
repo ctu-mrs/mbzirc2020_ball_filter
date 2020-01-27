@@ -3,8 +3,8 @@ prediction_period: 0.05 # seconds
 max_time_since_update: 4.0 # seconds
 min_updates_to_confirm: 8
 
-ball_speed1: 5.0 # metres per second
-ball_speed2: 5.0 # metres per second
+ball_speed1: 3.0 # metres per second
+ball_speed2: 3.0 # metres per second
 ball_speed_change_after: 480.0 # seconds (480s is 8min)
 
 meas_filt:
@@ -57,6 +57,7 @@ z_bounds: # measurements outside these bounds will be ignored
 
 rheiv:
   fitting_period: 1.0 # seconds
-  min_points: 8000
-  max_points: 500
+  min_points: 600
+  max_points: 900
   visualization_size: 20 # metres
+  timeout: 3.0 # seconds

@@ -284,8 +284,8 @@ namespace balloon_filter
     // threadsafe copy the data to be fitted with the plane
     const auto [rheiv_pts, rheiv_covs, rheiv_new_data, rheiv_last_data_update] = get_set_mutexed(m_rheiv_data_mtx,
         std::forward_as_tuple(m_rheiv_pts, m_rheiv_covs, m_rheiv_new_data, m_rheiv_last_data_update),
-        std::make_tuple(false),
-        std::forward_as_tuple(m_rheiv_new_data)
+        std::make_tuple(false, true),
+        std::forward_as_tuple(m_rheiv_new_data, m_rheiv_fitting)
         );
 
     if ((ros::Time::now() - rheiv_last_data_update).toSec() >= m_max_time_since_update)
@@ -311,17 +311,26 @@ namespace balloon_filter
           theta = -theta;
         double angle_diff = plane_angle(theta, m_rheiv_theta);
 
-        // If everything went well, save the results and print a nice message
-        success = true;
-        stamp = ros::Time::now();
         {
-          std::scoped_lock lck(m_rheiv_theta_mtx);
-          m_rheiv_theta_valid = true;
-          m_rheiv_theta = theta;
+          std::scoped_lock lck(m_rheiv_data_mtx);
+          // check if the fitting was not reset in the meantime
+          if (m_rheiv_fitting)
+          {
+            // If everything went well, save the results and print a nice message
+            success = true;
+            stamp = ros::Time::now();
+            {
+              std::scoped_lock lck(m_rheiv_theta_mtx);
+              m_rheiv_theta_valid = true;
+              m_rheiv_theta = theta;
+            }
+            ROS_INFO_STREAM_THROTTLE(MSG_THROTTLE, "[RHEIV]: Fitted new plane estimate to " << rheiv_pts.size() << " points in " << (stamp - fit_time_start).toSec()
+                                                                                            << "s (angle diff: " << angle_diff << "):" << std::endl
+                                                                                            << "[" << theta.transpose() << "]");
+          }
+          // reset the fitting flag
+          m_rheiv_fitting = false;
         }
-        ROS_INFO_STREAM_THROTTLE(MSG_THROTTLE, "[RHEIV]: Fitted new plane estimate to " << rheiv_pts.size() << " points in " << (stamp - fit_time_start).toSec()
-                                                                                        << "s (angle diff: " << angle_diff << "):" << std::endl
-                                                                                        << "[" << theta.transpose() << "]");
       }
       catch (const mrs_lib::eigenvector_exception& ex)
       {
@@ -454,6 +463,7 @@ namespace balloon_filter
   void BalloonFilter::reset_rheiv_estimate()
   {
     std::scoped_lock lck(m_rheiv_data_mtx);
+    m_rheiv_fitting = false;
     m_rheiv_pts.clear();
     m_rheiv_covs.clear();
     m_rheiv_stamps.clear();

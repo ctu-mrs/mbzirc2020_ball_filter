@@ -194,6 +194,7 @@ namespace balloon_filter
       boost::circular_buffer<ros::Time> m_rheiv_stamps;
       ros::Time m_rheiv_last_data_update;
       bool m_rheiv_new_data;
+      bool m_rheiv_fitting;
       void add_rheiv_data(const pos_t& pos, const cov_t& cov, const ros::Time& stamp)
       {
         std::scoped_lock lck(m_rheiv_data_mtx);
