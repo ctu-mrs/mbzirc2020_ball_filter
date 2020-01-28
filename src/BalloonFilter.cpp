@@ -1486,7 +1486,8 @@ namespace balloon_filter
   {
     const bool height_valid = pt.z() > m_z_bounds_min && pt.z() < m_z_bounds_max;
     const bool sane_values = !pt.array().isNaN().any() && !pt.array().isInf().any();
-    return height_valid && sane_values;
+    const bool in_safety_zone = !m_safety_zone || m_safety_zone->isPointValid(pt.x(), pt.y());
+    return height_valid && sane_values && in_safety_zone;
   }
   //}
 
@@ -1643,6 +1644,57 @@ namespace balloon_filter
     pl.load_param("lkf/min_init_points", m_lkf_min_init_points);
     pl.load_param("lkf/init_history_duration", m_lkf_init_history_duration);
     pl.load_param("lkf/prediction_step", m_lkf_prediction_step);
+
+    // | ----------------------- safety area ---------------------- |
+    /*  //{ */
+    
+    const auto use_safety_area = pl.load_param2<bool>("safety_area/use_safety_area");
+    const auto safety_area_frame = pl.load_param2<std::string>("safety_area/frame_name");
+    
+    if (use_safety_area)
+    {
+      const Eigen::MatrixXd border_points = pl.load_matrix_dynamic2("safety_area/safety_area", -1, 2);
+    
+      const auto obstacle_polygons_enabled = pl.load_param2<bool>("safety_area/polygon_obstacles/enabled");
+      std::vector<Eigen::MatrixXd> polygon_obstacle_points;
+      if (obstacle_polygons_enabled)
+       polygon_obstacle_points = pl.load_matrix_array2("safety_area/polygon_obstacles", std::vector<Eigen::MatrixXd>{});
+      else
+        polygon_obstacle_points = std::vector<Eigen::MatrixXd>{};
+    
+      const auto obstacle_points_enabled = pl.load_param2<bool>("safety_area/point_obstacles/enabled");
+      std::vector<Eigen::MatrixXd> point_obstacle_points;
+      if (obstacle_points_enabled)
+        point_obstacle_points = pl.load_matrix_array2("safety_area/point_obstacles", std::vector<Eigen::MatrixXd>{});
+      else
+        point_obstacle_points = std::vector<Eigen::MatrixXd>{};
+    
+      // TODO: remove this when param loader supports proper loading
+      for (auto& matrix : polygon_obstacle_points)
+        matrix.transposeInPlace();
+
+      try
+      {
+        m_safety_zone = std::make_unique<mrs_lib::SafetyZone>(border_points, polygon_obstacle_points, point_obstacle_points);
+      }
+      catch (mrs_lib::SafetyZone::BorderError)
+      {
+        ROS_ERROR("[ControlManager]: Exception caught. Wrong configruation for the safety zone border polygon.");
+        ros::shutdown();
+      }
+      catch (mrs_lib::SafetyZone::PolygonObstacleError)
+      {
+        ROS_ERROR("[ControlManager]: Exception caught. Wrong configuration for one of the safety zone polygon obstacles.");
+        ros::shutdown();
+      }
+      catch (mrs_lib::SafetyZone::PointObstacleError)
+      {
+        ROS_ERROR("[ControlManager]: Exception caught. Wrong configuration for one of the safety zone point obstacles.");
+        ros::shutdown();
+      }
+    }
+    
+    //}
 
     if (!pl.loaded_successfully())
     {

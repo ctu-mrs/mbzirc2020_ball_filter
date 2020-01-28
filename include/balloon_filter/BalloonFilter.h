@@ -32,6 +32,7 @@
 #include <mrs_lib/DynamicReconfigureMgr.h>
 #include <mrs_lib/geometry_utils.h>
 #include <mrs_lib/mutex.h>
+#include <mrs_lib/SafetyZone/SafetyZone.h>
 
 // Boost
 #include <boost/circular_buffer.hpp>
@@ -250,6 +251,7 @@ namespace balloon_filter
       using prev_measurement_t = std::tuple<std::vector<pos_cov_t>, ros::Time>;
       using prev_measurements_t = boost::circular_buffer<prev_measurement_t>;
       prev_measurements_t m_prev_measurements;
+      std::unique_ptr<mrs_lib::SafetyZone> m_safety_zone;
 
     private:
 
