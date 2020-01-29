@@ -1,0 +1,29 @@
+<launch>
+ 	
+	<arg name="uav_name" default="$(optenv UAV_NAME uav)"/>
+  <arg name="use_yaw" default="true"/>
+  <arg name="fly_now" default="true"/>
+  <arg name="loop" default="true"/>
+
+  <arg name="debug" default="false" />
+  <arg unless="$(arg debug)" name="launch_prefix" value=""/>
+  <arg     if="$(arg debug)" name="launch_prefix" value="debug_roslaunch"/>
+
+	<group ns="$(arg uav_name)">
+	
+		<node name="trajectory_loader" pkg="trajectory_loader" type="load_trajectory" args="--load" output="screen" launch-prefix="$(arg launch_prefix)" >
+    
+      <rosparam file="$(find balloon_filter)/config/trajectory_loader.yaml" />
+
+			<param name="current_working_directory" type="string" value="$(find balloon_filter)" />	
+			<param name="service_topic" type="string" value="control_manager/mpc_tracker/set_trajectory" />	
+      
+      <param name="use_yaw" type="bool" value="$(arg use_yaw)" />
+      <param name="fly_now" type="bool" value="$(arg fly_now)" />
+      <param name="loop" type="bool" value="$(arg loop)" />
+    
+    </node>
+	</group>
+
+</launch>
+
