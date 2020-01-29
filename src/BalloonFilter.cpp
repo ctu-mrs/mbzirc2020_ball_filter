@@ -1486,7 +1486,7 @@ namespace balloon_filter
   {
     const bool height_valid = pt.z() > m_z_bounds_min && pt.z() < m_z_bounds_max;
     const bool sane_values = !pt.array().isNaN().any() && !pt.array().isInf().any();
-    const bool in_safety_zone = !m_safety_zone || m_safety_zone->isPointValid(pt.x(), pt.y());
+    const bool in_safety_zone = !m_safety_zone || m_safety_zone->isPointValid(pt.x(), pt.y(), pt.z());
     return height_valid && sane_values && in_safety_zone;
   }
   //}
