@@ -22,7 +22,7 @@
 
       <param name="uav_name" type="string" value="$(arg uav_name)" />
       <param name="uav_frame_id" type="string" value="$(arg uav_name)/fcu" />
-      <param name="world_frame_id" type="string" value="$(arg uav_name)/local_origin" />
+      <param name="world_frame_id" type="string" value="$(arg uav_name)/gps_origin" />
       <rosparam file="$(find balloon_filter)/config/filter_params.yaml" command="load" />
       <rosparam file="$(arg world_file)" command="load" />
 
