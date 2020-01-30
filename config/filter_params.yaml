@@ -52,7 +52,7 @@ lpf:
     curvature: 0.5 # hertz
 
 z_bounds: # measurements outside these bounds will be ignored
-  min: 0  # metres
+  min: 5  # metres
   max: 20 # metres
 
 rheiv:
