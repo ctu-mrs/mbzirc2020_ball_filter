@@ -1594,8 +1594,6 @@ namespace balloon_filter
   void BalloonFilter::init_safety_area([[maybe_unused]] const ros::TimerEvent& evt)
   {
     assert(m_safety_area_border_points.cols() == 2);
-    assert(m_safety_area_polygon_obstacle_points.cols() == 3);
-    assert(m_safety_area_point_obstacle_points.cols() == 3);
     const auto tf_opt = m_transformer.getTransform(m_safety_area_frame, m_world_frame_id);
     if (!tf_opt.has_value())
     {
@@ -1636,6 +1634,7 @@ namespace balloon_filter
       {
         for (int it = 0; it < mat.rows(); it++)
         {
+          assert(mat.cols() == 3);
           Eigen::Vector3d vec = mat.row(it);
           geometry_msgs::Point pt;
           pt.x = vec.x();
@@ -1664,6 +1663,7 @@ namespace balloon_filter
       {
         for (int it = 0; it < mat.rows(); it++)
         {
+          assert(mat.cols() == 3);
           Eigen::Vector3d vec = mat.row(it);
           geometry_msgs::Point pt;
           pt.x = vec.x();
