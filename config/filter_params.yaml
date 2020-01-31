@@ -1,4 +1,4 @@
-planning_period: 0.01 # seconds
+processing_period: 0.01 # seconds
 prediction_period: 0.05 # seconds
 max_time_since_update: 4.0 # seconds
 min_updates_to_confirm: 8

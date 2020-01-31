@@ -33,6 +33,7 @@
 #include <mrs_lib/geometry_utils.h>
 #include <mrs_lib/mutex.h>
 #include <mrs_lib/SafetyZone/SafetyZone.h>
+#include <mrs_lib/transformer.h>
 
 // Boost
 #include <boost/circular_buffer.hpp>
@@ -182,6 +183,8 @@ namespace balloon_filter
       ros::Timer m_rheiv_loop_timer;
       ros::Timer m_prediction_loop_timer;
       //}
+
+      mrs_lib::Transformer m_transformer;
 
       // | ----------------- RHEIV related variables ---------------- |
 

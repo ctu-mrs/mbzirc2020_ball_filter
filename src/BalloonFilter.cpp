@@ -1618,10 +1618,17 @@ namespace balloon_filter
 
     ROS_INFO("[%s]: LOADING STATIC PARAMETERS", m_node_name.c_str());
     mrs_lib::ParamLoader pl(nh, m_node_name);
+    const auto uav_name = pl.load_param2<std::string>("uav_name");
+
+    /* initialize transformer //{ */
+    
+    m_transformer = mrs_lib::Transformer(m_node_name, uav_name);
+    
+    //}
 
     const int measurements_buffer_length = pl.load_param2<int>("meas_filt/buffer_length");
 
-    const double planning_period = pl.load_param2<double>("planning_period");
+    const double processing_period = pl.load_param2<double>("processing_period");
     const double prediction_period = pl.load_param2<double>("prediction_period");
     pl.load_param("world_frame_id", m_world_frame_id);
     pl.load_param("uav_frame_id", m_uav_frame_id);
@@ -1653,44 +1660,106 @@ namespace balloon_filter
     
     if (use_safety_area)
     {
-      const Eigen::MatrixXd border_points = pl.load_matrix_dynamic2("safety_area/safety_area", -1, 2);
-    
-      const auto obstacle_polygons_enabled = pl.load_param2<bool>("safety_area/polygon_obstacles/enabled");
-      std::vector<Eigen::MatrixXd> polygon_obstacle_points;
-      if (obstacle_polygons_enabled)
-       polygon_obstacle_points = pl.load_matrix_array2("safety_area/polygon_obstacles", std::vector<Eigen::MatrixXd>{});
+      const auto tf_opt = m_transformer.getTransform(safety_area_frame, m_world_frame_id);
+      if (!tf_opt.has_value())
+      {
+        ROS_ERROR("Safety area could not be transformed!");
+        ros::shutdown();
+      }
       else
-        polygon_obstacle_points = std::vector<Eigen::MatrixXd>{};
-    
-      const auto obstacle_points_enabled = pl.load_param2<bool>("safety_area/point_obstacles/enabled");
-      std::vector<Eigen::MatrixXd> point_obstacle_points;
-      if (obstacle_points_enabled)
-        point_obstacle_points = pl.load_matrix_array2("safety_area/point_obstacles", std::vector<Eigen::MatrixXd>{});
-      else
-        point_obstacle_points = std::vector<Eigen::MatrixXd>{};
-    
-      // TODO: remove this when param loader supports proper loading
-      for (auto& matrix : polygon_obstacle_points)
-        matrix.transposeInPlace();
+      {
+        const auto tf = tf_opt.value();
+        Eigen::MatrixXd border_points = pl.load_matrix_dynamic2("safety_area/safety_area", -1, 2);
+      
+        const auto obstacle_polygons_enabled = pl.load_param2<bool>("safety_area/polygon_obstacles/enabled");
+        std::vector<Eigen::MatrixXd> polygon_obstacle_points;
+        if (obstacle_polygons_enabled)
+          polygon_obstacle_points = pl.load_matrix_array2("safety_area/polygon_obstacles", std::vector<Eigen::MatrixXd>{});
+      
+        const auto obstacle_points_enabled = pl.load_param2<bool>("safety_area/point_obstacles/enabled");
+        std::vector<Eigen::MatrixXd> point_obstacle_points;
+        if (obstacle_points_enabled)
+          point_obstacle_points = pl.load_matrix_array2("safety_area/point_obstacles", std::vector<Eigen::MatrixXd>{});
+      
+        // TODO: remove this when param loader supports proper loading
+        for (auto& matrix : polygon_obstacle_points)
+          matrix.transposeInPlace();
 
-      try
-      {
-        m_safety_zone = std::make_unique<mrs_lib::SafetyZone>(border_points, polygon_obstacle_points, point_obstacle_points);
-      }
-      catch (mrs_lib::SafetyZone::BorderError)
-      {
-        ROS_ERROR("[ControlManager]: Exception caught. Wrong configruation for the safety zone border polygon.");
-        ros::shutdown();
-      }
-      catch (mrs_lib::SafetyZone::PolygonObstacleError)
-      {
-        ROS_ERROR("[ControlManager]: Exception caught. Wrong configuration for one of the safety zone polygon obstacles.");
-        ros::shutdown();
-      }
-      catch (mrs_lib::SafetyZone::PointObstacleError)
-      {
-        ROS_ERROR("[ControlManager]: Exception caught. Wrong configuration for one of the safety zone point obstacles.");
-        ros::shutdown();
+        /* transform border_points //{ */
+        
+        {
+          const Eigen::MatrixXd tmp = border_points.transpose();
+          auto ret = m_transformer.transform(tf, tmp);
+          if (!ret.has_value())
+          {
+            ROS_ERROR("Safety area could not be transformed!");
+            ros::shutdown();
+          }
+          else
+          {
+            border_points = ret.value().transpose();
+          }
+        }
+        
+        //}
+
+        /* transform polygon_obstacle_points //{ */
+        
+        for (auto& mat : polygon_obstacle_points)
+        {
+          const Eigen::MatrixXd tmp = mat.transpose();
+          auto ret = m_transformer.transform(tf, tmp);
+          if (!ret.has_value())
+          {
+            ROS_ERROR("Safety area could not be transformed!");
+            ros::shutdown();
+          }
+          else
+          {
+            mat = ret.value().transpose();
+          }
+        }
+        
+        //}
+
+        /* transform point_obstacle_points //{ */
+        
+        for (auto& mat : point_obstacle_points)
+        {
+          const Eigen::MatrixXd tmp = mat.transpose();
+          auto ret = m_transformer.transform(tf, tmp);
+          if (!ret.has_value())
+          {
+            ROS_ERROR("Safety area could not be transformed!");
+            ros::shutdown();
+          }
+          else
+          {
+            mat = ret.value().transpose();
+          }
+        }
+        
+        //}
+
+        try
+        {
+          m_safety_zone = std::make_unique<mrs_lib::SafetyZone>(border_points, polygon_obstacle_points, point_obstacle_points);
+        }
+        catch (mrs_lib::SafetyZone::BorderError)
+        {
+          ROS_ERROR("[ControlManager]: Exception caught. Wrong configruation for the safety zone border polygon.");
+          ros::shutdown();
+        }
+        catch (mrs_lib::SafetyZone::PolygonObstacleError)
+        {
+          ROS_ERROR("[ControlManager]: Exception caught. Wrong configuration for one of the safety zone polygon obstacles.");
+          ros::shutdown();
+        }
+        catch (mrs_lib::SafetyZone::PointObstacleError)
+        {
+          ROS_ERROR("[ControlManager]: Exception caught. Wrong configuration for one of the safety zone point obstacles.");
+          ros::shutdown();
+        }
       }
     }
     
@@ -1800,7 +1869,7 @@ namespace balloon_filter
 
     /* timers  //{ */
 
-    m_main_loop_timer = nh.createTimer(ros::Duration(planning_period), &BalloonFilter::main_loop, this);
+    m_main_loop_timer = nh.createTimer(ros::Duration(processing_period), &BalloonFilter::main_loop, this);
     m_rheiv_loop_timer = nh.createTimer(ros::Duration(m_rheiv_fitting_period), &BalloonFilter::rheiv_loop, this);
     m_prediction_loop_timer = nh.createTimer(ros::Duration(prediction_period), &BalloonFilter::prediction_loop, this);
 
