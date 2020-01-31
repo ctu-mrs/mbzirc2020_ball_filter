@@ -6,7 +6,7 @@ pattern:
   lin_cutoff:    5.0 # metres, how much of the radius will be cut-off in favour of the linear segment
   # parameters of transformation of the eight pattern
   rotation_ypr:  [0.0, 0.0, 0.0] # radians
-  translation:   [0.0, 0.0, 8.5] # metres
+  translation:   [3.0, 0.0, 8.5] # metres
   yaw: 0.0 # radians
 
 # parameters of the sampling
