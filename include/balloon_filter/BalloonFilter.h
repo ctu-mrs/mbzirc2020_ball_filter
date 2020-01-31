@@ -94,19 +94,21 @@ namespace balloon_filter
   class BalloonFilter : public nodelet::Nodelet
   {
     public:
-      BalloonFilter() : m_node_name("BalloonFilter") {};
+      BalloonFilter() : m_is_initialized(false), m_node_name("BalloonFilter") {};
       virtual void onInit();
 
-      bool m_is_initialized;
-
     private:
+      bool m_is_initialized;
+      bool m_safety_area_initialized;
       const std::string m_node_name;
+
       void main_loop(const ros::TimerEvent& evt);
       void rheiv_loop(const ros::TimerEvent& evt);
       void lpf_loop(const ros::TimerEvent& evt);
       void prediction_loop(const ros::TimerEvent& evt);
 
       void process_detections(const detections_t& detections);
+      void init_safety_area(const ros::TimerEvent& evt);
 
     private:
       std::unique_ptr<mrs_lib::Profiler> m_profiler_ptr;
@@ -120,6 +122,7 @@ namespace balloon_filter
       /* Parameters, loaded from ROS //{ */
       std::string m_world_frame_id;
       std::string m_uav_frame_id;
+      std::string m_safety_area_frame;
 
       double m_rheiv_fitting_period;
       int m_rheiv_min_pts;
@@ -154,6 +157,10 @@ namespace balloon_filter
       double m_ball_speed2;
       ros::Time m_ball_speed_change;
 
+      Eigen::MatrixXd m_safety_area_border_points;
+      std::vector<Eigen::MatrixXd> m_safety_area_polygon_obstacle_points;
+      std::vector<Eigen::MatrixXd> m_safety_area_point_obstacle_points;
+
       //}
 
       /* ROS related variables (subscribers, timers etc.) //{ */
@@ -182,6 +189,7 @@ namespace balloon_filter
       ros::Timer m_main_loop_timer;
       ros::Timer m_rheiv_loop_timer;
       ros::Timer m_prediction_loop_timer;
+      ros::Timer m_safety_area_init_timer;
       //}
 
       mrs_lib::Transformer m_transformer;
@@ -230,12 +238,16 @@ namespace balloon_filter
 
       // | ------------------ LKF related variables ----------------- |
 
+      /*  //{ */
+      
       LKF m_lkf;
       std::mutex m_lkf_estimate_mtx;
       bool m_lkf_estimate_exists;
       LKF::statecov_t m_lkf_estimate;
       ros::Time m_lkf_last_update;
       int m_lkf_n_updates;
+      
+      //}
 
 
       // | ------------------ LPF related variables ----------------- |
@@ -254,7 +266,7 @@ namespace balloon_filter
       using prev_measurement_t = std::tuple<std::vector<pos_cov_t>, ros::Time>;
       using prev_measurements_t = boost::circular_buffer<prev_measurement_t>;
       prev_measurements_t m_prev_measurements;
-      std::unique_ptr<mrs_lib::SafetyZone> m_safety_zone;
+      std::unique_ptr<mrs_lib::SafetyZone> m_safety_area;
 
     private:
 

@@ -3,6 +3,252 @@
 namespace balloon_filter
 {
 
+  /* main_loop() method //{ */
+  void BalloonFilter::main_loop([[maybe_unused]] const ros::TimerEvent& evt)
+  {
+    if (!m_is_initialized)
+      return;
+    static ros::Time prev_stamp = ros::Time::now();
+    const ros::Time cur_stamp = ros::Time::now();
+    if (cur_stamp < prev_stamp)
+    {
+      ROS_WARN("[BalloonFilter]: Detected jump back in time, resetting.");
+      reset_estimates();
+    }
+    prev_stamp = cur_stamp;
+    load_dynparams(m_drmgr_ptr->config);
+
+    if (m_sh_balloons->new_data())
+      process_detections(*m_sh_balloons->get_data());
+
+    if (m_sh_balloons_bfx->new_data())
+      process_detections(*m_sh_balloons_bfx->get_data());
+
+    const auto lkf_last_update = get_mutexed(m_lkf_estimate_mtx, m_lkf_last_update);
+    if ((ros::Time::now() - lkf_last_update).toSec() >= m_max_time_since_update)
+      reset_lkf_estimate();
+
+    const auto ukf_last_update = get_mutexed(m_ukf_estimate_mtx, m_ukf_last_update);
+    if ((ros::Time::now() - ukf_last_update).toSec() >= m_max_time_since_update)
+      reset_ukf_estimate();
+
+    if (m_ukf_estimate_exists)
+    {
+      /* check if the current UKF estimate doesn't violate some thresholds, print it //{ */
+      
+      const auto [plane_theta_valid, plane_theta] = get_mutexed(m_rheiv_theta_mtx, m_rheiv_theta_valid, m_rheiv_theta);
+      if (plane_theta_valid)
+      {
+        const double dt = (ros::Time::now() - m_ukf_last_update).toSec();
+        auto cur_estimate = predict_ukf_estimate(m_ukf_estimate, dt, plane_theta, ball_speed_at_time(m_ukf_last_update));
+      
+        Eigen::IOFormat short_fmt(3);
+        cur_estimate.x.format(short_fmt);
+        ROS_WARN_STREAM_THROTTLE(MSG_THROTTLE, "[UKF]: Current UKF prediction:" << std::endl
+                                                                                << "[\tx\t\ty\t\tz\t\tyaw\t\tspd\t\tcur\t]" << std::endl
+                                                                                << "[" << cur_estimate.x.transpose() << "]");
+        /* const auto cur_pos_cov = get_pos_cov(cur_estimate); */
+        // if the absolute estimated curvature exceeds the user-set threshold, reset it
+        const auto curv = std::abs(cur_estimate.x(ukf::x::c));
+        if (curv > 0.0)
+        {
+          const auto radius = 1.0/curv;
+          if (radius < m_ukf_min_radius)
+          {
+            reset_ukf_estimate();
+            ROS_WARN("[UKF]: UKF radius (1/%.2f) estimate is under the threshold (%.2f > %.2f), resetting the UKF!", curv, radius, m_ukf_min_radius);
+          }
+        }
+      }
+      
+      //}
+    }
+    else if (m_lkf_estimate_exists)
+    {
+      /* check if the current LKF estimate doesn't violate some thresholds, print it //{ */
+      
+      ros::Time cur_stamp = ros::Time::now();
+      const double dt = (cur_stamp - m_lkf_last_update).toSec();
+      auto cur_estimate = predict_lkf_estimate(m_lkf_estimate, dt);
+      
+      Eigen::IOFormat short_fmt(3);
+      cur_estimate.x.format(short_fmt);
+      ROS_WARN_STREAM_THROTTLE(MSG_THROTTLE, "[LKF]: Current LKF prediction:" << std::endl
+                                                                              << "[\tx\t\ty\t\tz\t\tdx\t\tdy\t\tdz\t]" << std::endl
+                                                                              << "[" << cur_estimate.x.transpose() << "]");
+      /* const auto cur_pos_cov = get_pos_cov(cur_estimate); */
+      // if the absolute estimated curvature exceeds the user-set threshold, reset it
+      const auto speed = cur_estimate.x.block<3, 1>(3, 0).norm();
+      const auto exp_speed = ball_speed_at_time(cur_stamp);
+      const auto speed_err = std::abs(speed - exp_speed);
+      ROS_INFO_THROTTLE(1.0, "[LKF]: Current LKF speed estimate is %.2fm/s (expected: %.2f)!", speed, exp_speed);
+      if (speed_err > m_lkf_max_speed_err)
+      {
+        reset_lkf_estimate();
+        ROS_WARN("[LKF]: LKF speed estimate error exceeded the threshold (%.2f > %.2f), resetting the LKF!", speed_err, m_lkf_max_speed_err);
+      }
+      
+      //}
+    }
+  }
+  //}
+
+  /* rheiv_loop() method //{ */
+  void BalloonFilter::rheiv_loop([[maybe_unused]] const ros::TimerEvent& evt)
+  {
+    if (!m_is_initialized)
+      return;
+    // threadsafe copy the data to be fitted with the plane
+    const auto [rheiv_pts, rheiv_covs, rheiv_new_data, rheiv_last_data_update] = get_set_mutexed(m_rheiv_data_mtx,
+        std::forward_as_tuple(m_rheiv_pts, m_rheiv_covs, m_rheiv_new_data, m_rheiv_last_data_update),
+        std::make_tuple(false, true),
+        std::forward_as_tuple(m_rheiv_new_data, m_rheiv_fitting)
+        );
+
+    if ((ros::Time::now() - rheiv_last_data_update).toSec() >= m_max_time_since_update)
+    {
+      reset_rheiv_estimate();
+      return;
+    }
+
+    if (!rheiv_new_data)
+      return;
+
+    ros::Time stamp = ros::Time::now();
+    bool success = false;
+    rheiv::theta_t theta;
+    if (rheiv_pts.size() > (size_t)m_rheiv_min_pts)
+    {
+      ros::Time fit_time_start = ros::Time::now();
+      // Fitting might throw an exception, so we better try/catch it!
+      try
+      {
+        theta = fit_plane(rheiv_pts, rheiv_covs);
+        if (abs(plane_angle(-theta, m_rheiv_theta)) < abs(plane_angle(theta, m_rheiv_theta)))
+          theta = -theta;
+        double angle_diff = plane_angle(theta, m_rheiv_theta);
+
+        {
+          std::scoped_lock lck(m_rheiv_data_mtx);
+          // check if the fitting was not reset in the meantime
+          if (m_rheiv_fitting)
+          {
+            // If everything went well, save the results and print a nice message
+            success = true;
+            stamp = ros::Time::now();
+            {
+              std::scoped_lock lck(m_rheiv_theta_mtx);
+              m_rheiv_theta_valid = true;
+              m_rheiv_theta = theta;
+            }
+            ROS_INFO_STREAM_THROTTLE(MSG_THROTTLE, "[RHEIV]: Fitted new plane estimate to " << rheiv_pts.size() << " points in " << (stamp - fit_time_start).toSec()
+                                                                                            << "s (angle diff: " << angle_diff << "):" << std::endl
+                                                                                            << "[" << theta.transpose() << "]");
+          }
+          // reset the fitting flag
+          m_rheiv_fitting = false;
+        }
+      }
+      catch (const mrs_lib::eigenvector_exception& ex)
+      {
+        // Fitting threw exception, notify the user.
+        stamp = ros::Time::now();
+        ROS_WARN_STREAM_THROTTLE(MSG_THROTTLE, "[RHEIV]: Could not fit plane: '" << ex.what() << "' (took " << (stamp - fit_time_start).toSec() << "s).");
+      }
+    } else
+    {
+      // Still waiting for enough points to fit the plane through.
+      ROS_WARN_STREAM_THROTTLE(MSG_THROTTLE, "[RHEIV]: Not enough points to fit plane (" << rheiv_pts.size() << "/ " << m_rheiv_min_pts << ").");
+    }
+
+    if (m_pub_used_pts.getNumSubscribers() > 0)
+    {
+      std_msgs::Header header;
+      header.frame_id = m_world_frame_id;
+      header.stamp = ros::Time::now();
+      m_pub_used_pts.publish(to_output_message(rheiv_pts, header));
+    }
+
+    if (success)
+    {
+      std_msgs::Header header;
+      header.frame_id = m_world_frame_id;
+      header.stamp = stamp;
+      m_pub_fitted_plane.publish(to_output_message(theta, header));
+    }
+    /* // start the fitting process again after the desired delay */
+    /* ros::Duration d_remaining = ros::Duration(m_rheiv_fitting_period) - d_cbk; */
+    /* if (d_remaining < ros::Duration(0)) */
+    /*   d_remaining = ros::Duration(0); */
+    /* ROS_WARN_STREAM("[RHEIV]: Next fit in " << d_remaining.toSec() << "s."); */
+    /* m_rheiv_loop_timer.stop(); */
+    /* m_rheiv_loop_timer.setPeriod(d_remaining); */
+    /* m_rheiv_loop_timer.start(); */
+  }
+  //}
+
+  /* prediction_loop() method //{ */
+  void BalloonFilter::prediction_loop([[maybe_unused]] const ros::TimerEvent& evt)
+  {
+    if (!m_is_initialized)
+      return;
+    const auto [lkf_estimate_exists, lkf_estimate, lkf_last_update, lkf_n_updates] = mrs_lib::get_mutexed(m_lkf_estimate_mtx, m_lkf_estimate_exists, m_lkf_estimate, m_lkf_last_update, m_lkf_n_updates);
+    const auto [ukf_estimate_exists, ukf_estimate, ukf_last_update, ukf_n_updates] = mrs_lib::get_mutexed(m_ukf_estimate_mtx, m_ukf_estimate_exists, m_ukf_estimate, m_ukf_last_update, m_ukf_n_updates);
+    const auto [plane_theta_valid, plane_theta] = mrs_lib::get_mutexed(m_rheiv_theta_mtx, m_rheiv_theta_valid, m_rheiv_theta);
+
+    balloon_filter::BallPrediction message;
+    message.header.frame_id = m_world_frame_id;
+    message.header.stamp = ros::Time::now();
+    
+    balloon_filter::Plane fitted_plane;
+    balloon_filter::FilterState filter_state;
+    const double expected_speed = ball_speed_at_time(message.header.stamp);
+    filter_state.expected_speed = expected_speed;
+    filter_state.ukf_state.valid = false;
+    filter_state.lkf_state.valid = false;
+    nav_msgs::Path predicted_path;
+
+    if (lkf_estimate_exists && lkf_n_updates > m_min_updates_to_confirm)
+    {
+      /* use LKF by default, if available //{ */
+      
+      const auto predictions = predict_lkf_states(lkf_estimate, lkf_last_update, m_lkf_prediction_horizon, m_lkf_prediction_step, expected_speed);
+      message.header.stamp = lkf_last_update;
+      filter_state.lkf_state = to_output_message(lkf_estimate);
+      filter_state.lkf_state.valid = true;
+      predicted_path = to_output_message(predictions, message.header);
+      
+      //}
+    }
+
+    if (ukf_estimate_exists && ukf_n_updates > m_min_updates_to_confirm && plane_theta_valid)
+    {
+      /* use the UKF prediction instead (more precise), if available //{ */
+      
+      const auto predictions = predict_ukf_states(ukf_estimate, ukf_last_update, plane_theta, m_ukf_prediction_horizon, m_ukf_prediction_step);
+      message.header.stamp = ukf_last_update;
+      filter_state.ukf_state = to_output_message(ukf_estimate);
+      filter_state.ukf_state.valid = true;
+      predicted_path = to_output_message(predictions, message.header, plane_theta);
+      
+      //}
+    }
+
+    if (plane_theta_valid)
+    {
+      fitted_plane = to_output_message(plane_theta);
+      fitted_plane.valid = true;
+    }
+    
+    filter_state.fitted_plane = fitted_plane;
+    message.filter_state = filter_state;
+    message.predicted_path = predicted_path;
+    
+    m_pub_pred_path_dbg.publish(predicted_path);
+    m_pub_ball_prediction.publish(message);
+  }
+  //}
+
   /* process_detections() method //{ */
   void BalloonFilter::process_detections(const detections_t& detections_msg)
   {
@@ -187,263 +433,6 @@ namespace balloon_filter
     {
       ROS_INFO_THROTTLE(MSG_THROTTLE, "[%s]: Empty detections message received", m_node_name.c_str());
     }
-  }
-  //}
-
-  /* main_loop() method //{ */
-  void BalloonFilter::main_loop([[maybe_unused]] const ros::TimerEvent& evt)
-  {
-    static ros::Time prev_stamp = ros::Time::now();
-    const ros::Time cur_stamp = ros::Time::now();
-    if (cur_stamp < prev_stamp)
-    {
-      ROS_WARN("[BalloonFilter]: Detected jump back in time, resetting.");
-      reset_estimates();
-    }
-    prev_stamp = cur_stamp;
-    load_dynparams(m_drmgr_ptr->config);
-
-    if (m_sh_balloons->new_data())
-      process_detections(*m_sh_balloons->get_data());
-
-    if (m_sh_balloons_bfx->new_data())
-      process_detections(*m_sh_balloons_bfx->get_data());
-
-    const auto lkf_last_update = get_mutexed(m_lkf_estimate_mtx, m_lkf_last_update);
-    if ((ros::Time::now() - lkf_last_update).toSec() >= m_max_time_since_update)
-      reset_lkf_estimate();
-
-    const auto ukf_last_update = get_mutexed(m_ukf_estimate_mtx, m_ukf_last_update);
-    if ((ros::Time::now() - ukf_last_update).toSec() >= m_max_time_since_update)
-      reset_ukf_estimate();
-
-    if (m_ukf_estimate_exists)
-    {
-      /* check if the current UKF estimate doesn't violate some thresholds, print it //{ */
-      
-      const auto [plane_theta_valid, plane_theta] = get_mutexed(m_rheiv_theta_mtx, m_rheiv_theta_valid, m_rheiv_theta);
-      if (plane_theta_valid)
-      {
-        const double dt = (ros::Time::now() - m_ukf_last_update).toSec();
-        auto cur_estimate = predict_ukf_estimate(m_ukf_estimate, dt, plane_theta, ball_speed_at_time(m_ukf_last_update));
-      
-        Eigen::IOFormat short_fmt(3);
-        cur_estimate.x.format(short_fmt);
-        ROS_WARN_STREAM_THROTTLE(MSG_THROTTLE, "[UKF]: Current UKF prediction:" << std::endl
-                                                                                << "[\tx\t\ty\t\tz\t\tyaw\t\tspd\t\tcur\t]" << std::endl
-                                                                                << "[" << cur_estimate.x.transpose() << "]");
-        /* const auto cur_pos_cov = get_pos_cov(cur_estimate); */
-        // if the absolute estimated curvature exceeds the user-set threshold, reset it
-        const auto curv = std::abs(cur_estimate.x(ukf::x::c));
-        if (curv > 0.0)
-        {
-          const auto radius = 1.0/curv;
-          if (radius < m_ukf_min_radius)
-          {
-            reset_ukf_estimate();
-            ROS_WARN("[UKF]: UKF radius (1/%.2f) estimate is under the threshold (%.2f > %.2f), resetting the UKF!", curv, radius, m_ukf_min_radius);
-          }
-        }
-      }
-      
-      //}
-    }
-    else if (m_lkf_estimate_exists)
-    {
-      /* check if the current LKF estimate doesn't violate some thresholds, print it //{ */
-      
-      ros::Time cur_stamp = ros::Time::now();
-      const double dt = (cur_stamp - m_lkf_last_update).toSec();
-      auto cur_estimate = predict_lkf_estimate(m_lkf_estimate, dt);
-      
-      Eigen::IOFormat short_fmt(3);
-      cur_estimate.x.format(short_fmt);
-      ROS_WARN_STREAM_THROTTLE(MSG_THROTTLE, "[LKF]: Current LKF prediction:" << std::endl
-                                                                              << "[\tx\t\ty\t\tz\t\tdx\t\tdy\t\tdz\t]" << std::endl
-                                                                              << "[" << cur_estimate.x.transpose() << "]");
-      /* const auto cur_pos_cov = get_pos_cov(cur_estimate); */
-      // if the absolute estimated curvature exceeds the user-set threshold, reset it
-      const auto speed = cur_estimate.x.block<3, 1>(3, 0).norm();
-      const auto exp_speed = ball_speed_at_time(cur_stamp);
-      const auto speed_err = std::abs(speed - exp_speed);
-      ROS_INFO_THROTTLE(1.0, "[LKF]: Current LKF speed estimate is %.2fm/s (expected: %.2f)!", speed, exp_speed);
-      if (speed_err > m_lkf_max_speed_err)
-      {
-        reset_lkf_estimate();
-        ROS_WARN("[LKF]: LKF speed estimate error exceeded the threshold (%.2f > %.2f), resetting the LKF!", speed_err, m_lkf_max_speed_err);
-      }
-      
-      //}
-    }
-  }
-  //}
-
-  /* rheiv_loop() method //{ */
-  void BalloonFilter::rheiv_loop([[maybe_unused]] const ros::TimerEvent& evt)
-  {
-    // threadsafe copy the data to be fitted with the plane
-    const auto [rheiv_pts, rheiv_covs, rheiv_new_data, rheiv_last_data_update] = get_set_mutexed(m_rheiv_data_mtx,
-        std::forward_as_tuple(m_rheiv_pts, m_rheiv_covs, m_rheiv_new_data, m_rheiv_last_data_update),
-        std::make_tuple(false, true),
-        std::forward_as_tuple(m_rheiv_new_data, m_rheiv_fitting)
-        );
-
-    if ((ros::Time::now() - rheiv_last_data_update).toSec() >= m_max_time_since_update)
-    {
-      reset_rheiv_estimate();
-      return;
-    }
-
-    if (!rheiv_new_data)
-      return;
-
-    ros::Time stamp = ros::Time::now();
-    bool success = false;
-    rheiv::theta_t theta;
-    if (rheiv_pts.size() > (size_t)m_rheiv_min_pts)
-    {
-      ros::Time fit_time_start = ros::Time::now();
-      // Fitting might throw an exception, so we better try/catch it!
-      try
-      {
-        theta = fit_plane(rheiv_pts, rheiv_covs);
-        if (abs(plane_angle(-theta, m_rheiv_theta)) < abs(plane_angle(theta, m_rheiv_theta)))
-          theta = -theta;
-        double angle_diff = plane_angle(theta, m_rheiv_theta);
-
-        {
-          std::scoped_lock lck(m_rheiv_data_mtx);
-          // check if the fitting was not reset in the meantime
-          if (m_rheiv_fitting)
-          {
-            // If everything went well, save the results and print a nice message
-            success = true;
-            stamp = ros::Time::now();
-            {
-              std::scoped_lock lck(m_rheiv_theta_mtx);
-              m_rheiv_theta_valid = true;
-              m_rheiv_theta = theta;
-            }
-            ROS_INFO_STREAM_THROTTLE(MSG_THROTTLE, "[RHEIV]: Fitted new plane estimate to " << rheiv_pts.size() << " points in " << (stamp - fit_time_start).toSec()
-                                                                                            << "s (angle diff: " << angle_diff << "):" << std::endl
-                                                                                            << "[" << theta.transpose() << "]");
-          }
-          // reset the fitting flag
-          m_rheiv_fitting = false;
-        }
-      }
-      catch (const mrs_lib::eigenvector_exception& ex)
-      {
-        // Fitting threw exception, notify the user.
-        stamp = ros::Time::now();
-        ROS_WARN_STREAM_THROTTLE(MSG_THROTTLE, "[RHEIV]: Could not fit plane: '" << ex.what() << "' (took " << (stamp - fit_time_start).toSec() << "s).");
-      }
-    } else
-    {
-      // Still waiting for enough points to fit the plane through.
-      ROS_WARN_STREAM_THROTTLE(MSG_THROTTLE, "[RHEIV]: Not enough points to fit plane (" << rheiv_pts.size() << "/ " << m_rheiv_min_pts << ").");
-    }
-
-    if (m_pub_used_pts.getNumSubscribers() > 0)
-    {
-      std_msgs::Header header;
-      header.frame_id = m_world_frame_id;
-      header.stamp = ros::Time::now();
-      m_pub_used_pts.publish(to_output_message(rheiv_pts, header));
-    }
-
-    if (success)
-    {
-      std_msgs::Header header;
-      header.frame_id = m_world_frame_id;
-      header.stamp = stamp;
-      m_pub_fitted_plane.publish(to_output_message(theta, header));
-    }
-    /* // start the fitting process again after the desired delay */
-    /* ros::Duration d_remaining = ros::Duration(m_rheiv_fitting_period) - d_cbk; */
-    /* if (d_remaining < ros::Duration(0)) */
-    /*   d_remaining = ros::Duration(0); */
-    /* ROS_WARN_STREAM("[RHEIV]: Next fit in " << d_remaining.toSec() << "s."); */
-    /* m_rheiv_loop_timer.stop(); */
-    /* m_rheiv_loop_timer.setPeriod(d_remaining); */
-    /* m_rheiv_loop_timer.start(); */
-  }
-  //}
-
-  /* /1* lpf_loop() method //{ *1/ */
-  /* void BalloonFilter::lpf_loop([[maybe_unused]] const ros::TimerEvent& evt) */
-  /* { */
-  /*   const auto [ukf_estimate_exists, ukf_estimate] = mrs_lib::get_mutexed(m_ukf_estimate_mtx, m_ukf_estimate_exists, m_ukf_estimate); */
-
-  /*   if (!ukf_estimate_exists) */
-  /*   const double curvature = m_ukf_estimate.x(ukf::x::c); */
-  /*   static double curv_filtered = curvature; */
-
-  /*   mrs_msgs::Float64Stamped msg; */
-  /*   msg.header.stamp = ros::Time::now(); */
-  /*   msg.value = curv_filtered; */
-
-  /*   m_pub_lpf.publish(msg); */
-  /* } */
-  /* //} */
-
-  /* prediction_loop() method //{ */
-  void BalloonFilter::prediction_loop([[maybe_unused]] const ros::TimerEvent& evt)
-  {
-    const auto [lkf_estimate_exists, lkf_estimate, lkf_last_update, lkf_n_updates] = mrs_lib::get_mutexed(m_lkf_estimate_mtx, m_lkf_estimate_exists, m_lkf_estimate, m_lkf_last_update, m_lkf_n_updates);
-    const auto [ukf_estimate_exists, ukf_estimate, ukf_last_update, ukf_n_updates] = mrs_lib::get_mutexed(m_ukf_estimate_mtx, m_ukf_estimate_exists, m_ukf_estimate, m_ukf_last_update, m_ukf_n_updates);
-    const auto [plane_theta_valid, plane_theta] = mrs_lib::get_mutexed(m_rheiv_theta_mtx, m_rheiv_theta_valid, m_rheiv_theta);
-
-    balloon_filter::BallPrediction message;
-    message.header.frame_id = m_world_frame_id;
-    message.header.stamp = ros::Time::now();
-    
-    balloon_filter::Plane fitted_plane;
-    balloon_filter::FilterState filter_state;
-    const double expected_speed = ball_speed_at_time(message.header.stamp);
-    filter_state.expected_speed = expected_speed;
-    filter_state.ukf_state.valid = false;
-    filter_state.lkf_state.valid = false;
-    nav_msgs::Path predicted_path;
-
-    if (lkf_estimate_exists && lkf_n_updates > m_min_updates_to_confirm)
-    {
-      /* use LKF by default, if available //{ */
-      
-      const auto predictions = predict_lkf_states(lkf_estimate, lkf_last_update, m_lkf_prediction_horizon, m_lkf_prediction_step, expected_speed);
-      message.header.stamp = lkf_last_update;
-      filter_state.lkf_state = to_output_message(lkf_estimate);
-      filter_state.lkf_state.valid = true;
-      predicted_path = to_output_message(predictions, message.header);
-      
-      //}
-    }
-
-    if (ukf_estimate_exists && ukf_n_updates > m_min_updates_to_confirm && plane_theta_valid)
-    {
-      /* use the UKF prediction instead (more precise), if available //{ */
-      
-      const auto predictions = predict_ukf_states(ukf_estimate, ukf_last_update, plane_theta, m_ukf_prediction_horizon, m_ukf_prediction_step);
-      message.header.stamp = ukf_last_update;
-      filter_state.ukf_state = to_output_message(ukf_estimate);
-      filter_state.ukf_state.valid = true;
-      predicted_path = to_output_message(predictions, message.header, plane_theta);
-      
-      //}
-    }
-
-    if (plane_theta_valid)
-    {
-      fitted_plane = to_output_message(plane_theta);
-      fitted_plane.valid = true;
-    }
-    
-    filter_state.fitted_plane = fitted_plane;
-    message.filter_state = filter_state;
-    message.predicted_path = predicted_path;
-    
-    m_pub_pred_path_dbg.publish(predicted_path);
-    m_pub_ball_prediction.publish(message);
   }
   //}
 
@@ -1486,8 +1475,8 @@ namespace balloon_filter
   {
     const bool height_valid = pt.z() > m_z_bounds_min && pt.z() < m_z_bounds_max;
     const bool sane_values = !pt.array().isNaN().any() && !pt.array().isInf().any();
-    const bool in_safety_zone = !m_safety_zone || m_safety_zone->isPointValid(pt.x(), pt.y(), pt.z());
-    return height_valid && sane_values && in_safety_zone;
+    const bool in_safety_area = !m_safety_area || m_safety_area->isPointValid(pt.x(), pt.y(), pt.z());
+    return height_valid && sane_values && in_safety_area;
   }
   //}
 
@@ -1601,6 +1590,129 @@ namespace balloon_filter
   }
   //}
 
+  /* init_safety_area() method //{ */
+  void BalloonFilter::init_safety_area([[maybe_unused]] const ros::TimerEvent& evt)
+  {
+    assert(m_safety_area_border_points.cols() == 2);
+    assert(m_safety_area_polygon_obstacle_points.cols() == 3);
+    assert(m_safety_area_point_obstacle_points.cols() == 3);
+    const auto tf_opt = m_transformer.getTransform(m_safety_area_frame, m_world_frame_id);
+    if (!tf_opt.has_value())
+    {
+      ROS_ERROR("Safety area could not be transformed!");
+    }
+    else
+    {
+      const auto tf = tf_opt.value();
+      /* transform border_points //{ */
+  
+      {
+        for (int it = 0; it < m_safety_area_border_points.rows(); it++)
+        {
+          Eigen::Vector2d vec = m_safety_area_border_points.row(it);
+          geometry_msgs::Point pt;
+          pt.x = vec.x();
+          pt.y = vec.y();
+          pt.z = 0.0;
+          auto tfd = m_transformer.transformHeaderless(tf, pt);
+          if (!tfd.has_value())
+          {
+            ROS_ERROR("Safety area could not be transformed!");
+            ros::shutdown();
+          }
+          else
+          {
+            m_safety_area_border_points.row(it).x() = tfd.value().x;
+            m_safety_area_border_points.row(it).y() = tfd.value().y;
+          }
+        }
+      }
+  
+      //}
+  
+      /* transform polygon_obstacle_points //{ */
+  
+      for (auto& mat : m_safety_area_polygon_obstacle_points)
+      {
+        for (int it = 0; it < mat.rows(); it++)
+        {
+          Eigen::Vector3d vec = mat.row(it);
+          geometry_msgs::Point pt;
+          pt.x = vec.x();
+          pt.y = vec.y();
+          pt.z = vec.z();
+          auto tfd = m_transformer.transformHeaderless(tf, pt);
+          if (!tfd.has_value())
+          {
+            ROS_ERROR("Safety area could not be transformed!");
+            ros::shutdown();
+          }
+          else
+          {
+            mat.row(it).x() = tfd.value().x;
+            mat.row(it).y() = tfd.value().y;
+            mat.row(it).z() = tfd.value().z;
+          }
+        }
+      }
+  
+      //}
+  
+      /* transform point_obstacle_points //{ */
+  
+      for (auto& mat : m_safety_area_point_obstacle_points)
+      {
+        for (int it = 0; it < mat.rows(); it++)
+        {
+          Eigen::Vector3d vec = mat.row(it);
+          geometry_msgs::Point pt;
+          pt.x = vec.x();
+          pt.y = vec.y();
+          pt.z = vec.z();
+          auto tfd = m_transformer.transformHeaderless(tf, pt);
+          if (!tfd.has_value())
+          {
+            ROS_ERROR("Safety area could not be transformed!");
+            ros::shutdown();
+          }
+          else
+          {
+            mat.row(it).x() = tfd.value().x;
+            mat.row(it).y() = tfd.value().y;
+            mat.row(it).z() = tfd.value().z;
+          }
+        }
+      }
+  
+      //}
+  
+      try
+      {
+        m_safety_area = std::make_unique<mrs_lib::SafetyZone>(m_safety_area_border_points, m_safety_area_polygon_obstacle_points, m_safety_area_point_obstacle_points);
+        ROS_INFO("[%s]: Safety zone intialized!", m_node_name.c_str());
+      }
+      catch (mrs_lib::SafetyZone::BorderError)
+      {
+        ROS_ERROR("[%s]: Exception caught. Wrong configruation for the safety zone border polygon.", m_node_name.c_str());
+        ros::shutdown();
+      }
+      catch (mrs_lib::SafetyZone::PolygonObstacleError)
+      {
+        ROS_ERROR("[%s]: Exception caught. Wrong configuration for one of the safety zone polygon obstacles.", m_node_name.c_str());
+        ros::shutdown();
+      }
+      catch (mrs_lib::SafetyZone::PointObstacleError)
+      {
+        ROS_ERROR("[%s]: Exception caught. Wrong configuration for one of the safety zone point obstacles.", m_node_name.c_str());
+        ros::shutdown();
+      }
+      m_safety_area_init_timer.stop();
+      m_is_initialized = true;
+      m_safety_area_initialized = true;
+    }
+  }
+  //}
+
   /* onInit() //{ */
 
   void BalloonFilter::onInit()
@@ -1656,111 +1768,29 @@ namespace balloon_filter
     /*  //{ */
     
     const auto use_safety_area = pl.load_param2<bool>("safety_area/use_safety_area");
-    const auto safety_area_frame = pl.load_param2<std::string>("safety_area/frame_name");
+    m_safety_area_frame = pl.load_param2<std::string>("safety_area/frame_name");
     
     if (use_safety_area)
     {
-      const auto tf_opt = m_transformer.getTransform(safety_area_frame, m_world_frame_id);
-      if (!tf_opt.has_value())
-      {
-        ROS_ERROR("Safety area could not be transformed!");
-        ros::shutdown();
-      }
-      else
-      {
-        const auto tf = tf_opt.value();
-        Eigen::MatrixXd border_points = pl.load_matrix_dynamic2("safety_area/safety_area", -1, 2);
-      
-        const auto obstacle_polygons_enabled = pl.load_param2<bool>("safety_area/polygon_obstacles/enabled");
-        std::vector<Eigen::MatrixXd> polygon_obstacle_points;
-        if (obstacle_polygons_enabled)
-          polygon_obstacle_points = pl.load_matrix_array2("safety_area/polygon_obstacles", std::vector<Eigen::MatrixXd>{});
-      
-        const auto obstacle_points_enabled = pl.load_param2<bool>("safety_area/point_obstacles/enabled");
-        std::vector<Eigen::MatrixXd> point_obstacle_points;
-        if (obstacle_points_enabled)
-          point_obstacle_points = pl.load_matrix_array2("safety_area/point_obstacles", std::vector<Eigen::MatrixXd>{});
-      
-        // TODO: remove this when param loader supports proper loading
-        for (auto& matrix : polygon_obstacle_points)
-          matrix.transposeInPlace();
+      m_safety_area_border_points = pl.load_matrix_dynamic2("safety_area/safety_area", -1, 2);
+    
+      const auto obstacle_polygons_enabled = pl.load_param2<bool>("safety_area/polygon_obstacles/enabled");
+      if (obstacle_polygons_enabled)
+        m_safety_area_polygon_obstacle_points = pl.load_matrix_array2("safety_area/polygon_obstacles", std::vector<Eigen::MatrixXd>{});
+    
+      const auto obstacle_points_enabled = pl.load_param2<bool>("safety_area/point_obstacles/enabled");
+      if (obstacle_points_enabled)
+        m_safety_area_point_obstacle_points = pl.load_matrix_array2("safety_area/point_obstacles", std::vector<Eigen::MatrixXd>{});
+    
+      // TODO: remove this when param loader supports proper loading
+      for (auto& matrix : m_safety_area_polygon_obstacle_points)
+        matrix.transposeInPlace();
 
-        /* transform border_points //{ */
-        
-        {
-          const Eigen::MatrixXd tmp = border_points.transpose();
-          auto ret = m_transformer.transform(tf, tmp);
-          if (!ret.has_value())
-          {
-            ROS_ERROR("Safety area could not be transformed!");
-            ros::shutdown();
-          }
-          else
-          {
-            border_points = ret.value().transpose();
-          }
-        }
-        
-        //}
-
-        /* transform polygon_obstacle_points //{ */
-        
-        for (auto& mat : polygon_obstacle_points)
-        {
-          const Eigen::MatrixXd tmp = mat.transpose();
-          auto ret = m_transformer.transform(tf, tmp);
-          if (!ret.has_value())
-          {
-            ROS_ERROR("Safety area could not be transformed!");
-            ros::shutdown();
-          }
-          else
-          {
-            mat = ret.value().transpose();
-          }
-        }
-        
-        //}
-
-        /* transform point_obstacle_points //{ */
-        
-        for (auto& mat : point_obstacle_points)
-        {
-          const Eigen::MatrixXd tmp = mat.transpose();
-          auto ret = m_transformer.transform(tf, tmp);
-          if (!ret.has_value())
-          {
-            ROS_ERROR("Safety area could not be transformed!");
-            ros::shutdown();
-          }
-          else
-          {
-            mat = ret.value().transpose();
-          }
-        }
-        
-        //}
-
-        try
-        {
-          m_safety_zone = std::make_unique<mrs_lib::SafetyZone>(border_points, polygon_obstacle_points, point_obstacle_points);
-        }
-        catch (mrs_lib::SafetyZone::BorderError)
-        {
-          ROS_ERROR("[ControlManager]: Exception caught. Wrong configruation for the safety zone border polygon.");
-          ros::shutdown();
-        }
-        catch (mrs_lib::SafetyZone::PolygonObstacleError)
-        {
-          ROS_ERROR("[ControlManager]: Exception caught. Wrong configuration for one of the safety zone polygon obstacles.");
-          ros::shutdown();
-        }
-        catch (mrs_lib::SafetyZone::PointObstacleError)
-        {
-          ROS_ERROR("[ControlManager]: Exception caught. Wrong configuration for one of the safety zone point obstacles.");
-          ros::shutdown();
-        }
-      }
+      m_safety_area_init_timer = nh.createTimer(ros::Duration(1.0), &BalloonFilter::init_safety_area, this);
+    }
+    else
+    {
+      m_safety_area_initialized = false;
     }
     
     //}
@@ -1865,7 +1895,8 @@ namespace balloon_filter
 
     m_prev_measurements.set_capacity(measurements_buffer_length);
     reset_estimates();
-    m_is_initialized = true;
+    if (m_safety_area_initialized)
+      m_is_initialized = true;
 
     /* timers  //{ */
 
@@ -1875,7 +1906,7 @@ namespace balloon_filter
 
     //}
 
-    ROS_INFO("[%s]: initialized", m_node_name.c_str());
+    ROS_INFO("[%s]: onInit complete", m_node_name.c_str());
   }
 
   //}
