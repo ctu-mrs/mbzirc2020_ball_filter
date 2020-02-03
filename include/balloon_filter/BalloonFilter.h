@@ -55,6 +55,7 @@
 #include <balloon_filter/PlaneStamped.h>
 #include <balloon_filter/BallLocation.h>
 #include <object_detect/BallDetections.h>
+#include <depth_detect/Detections.h>
 
 //}
 
@@ -70,6 +71,8 @@ namespace balloon_filter
   using ros_poses_t = detections_t::_detections_type;
   using ros_pose_t = ros_poses_t::value_type::_pose_type::_pose_type;
   using ros_cov_t = ros_poses_t::value_type::_pose_type::_covariance_type;
+
+  using depth_detections_t = depth_detect::Detections;
 
   using RHEIV = rheiv::RHEIV;
   /* using RHEIV_conic = rheiv_conic::RHEIV_conic; */
@@ -108,6 +111,8 @@ namespace balloon_filter
       void prediction_loop(const ros::TimerEvent& evt);
 
       void process_detections(const detections_t& detections);
+      void process_detections(const depth_detections_t& detections_msg);
+      void process_measurements(const std::vector<pos_cov_t>& measurements, const std_msgs::Header& header);
       void init_safety_area(const ros::TimerEvent& evt);
 
     private:
@@ -153,6 +158,8 @@ namespace balloon_filter
       double m_lkf_prediction_horizon;
       double m_lkf_prediction_step;
 
+      double m_ball_wire_length;
+      
       double m_ball_speed1;
       double m_ball_speed2;
       ros::Time m_ball_speed_change;
@@ -167,8 +174,9 @@ namespace balloon_filter
       std::unique_ptr<drmgr_t> m_drmgr_ptr;
       tf2_ros::Buffer m_tf_buffer;
       std::unique_ptr<tf2_ros::TransformListener> m_tf_listener_ptr;
-      mrs_lib::SubscribeHandlerPtr<detections_t> m_sh_balloons;
-      mrs_lib::SubscribeHandlerPtr<detections_t> m_sh_balloons_bfx;
+      mrs_lib::SubscribeHandlerPtr<detections_t> m_sh_detections;
+      mrs_lib::SubscribeHandlerPtr<detections_t> m_sh_detections_bfx;
+      mrs_lib::SubscribeHandlerPtr<depth_detections_t> m_sh_depth_detections;
 
       ros::Publisher m_pub_meas_filt_dbg;
 
@@ -343,8 +351,8 @@ namespace balloon_filter
       template <class T>
       pos_cov_t get_pos_cov(const T& statecov);
 
-      balloon_filter::BallLocation to_output_message(const pos_cov_t& estimate, const std_msgs::Header& header, const sensor_msgs::CameraInfo& cinfo);
-      geometry_msgs::PoseWithCovarianceStamped to_output_message(const pos_cov_t& estimate, const std_msgs::Header& header);
+      balloon_filter::BallLocation to_output_message(const pos_cov_t& estimate, const std_msgs::Header& header);
+      geometry_msgs::PoseWithCovarianceStamped to_output_message2(const pos_cov_t& estimate, const std_msgs::Header& header);
       visualization_msgs::MarkerArray to_output_message(const theta_t& plane_theta, const std_msgs::Header& header, const pos_t& origin);
       geometry_msgs::PoseStamped to_output_message2(const theta_t& plane_theta, const std_msgs::Header& header, const pos_t& origin);
       nav_msgs::Path to_output_message(const std::vector<std::pair<UKF::x_t, ros::Time>>& predictions, const std_msgs::Header& header, const theta_t& plane_theta);
@@ -359,7 +367,8 @@ namespace balloon_filter
       /* bool find_closest_to(const std::vector<pos_cov_t>& measurements, const pos_t& to_position, pos_cov_t& closest_out, bool use_gating = false); */
       /* bool find_closest(const std::vector<pos_cov_t>& measurements, pos_cov_t& closest_out); */
 
-      std::vector<pos_cov_t> message_to_positions(const detections_t& balloon_msg);
+      std::vector<pos_cov_t> message_to_positions(const detections_t& det_msg);
+      std::vector<pos_cov_t> message_to_positions(const depth_detections_t& det_msg);
 
       void reset_estimates();
       bool reset_estimates_callback([[maybe_unused]] balloon_filter::ResetEstimates::Request& req, balloon_filter::ResetEstimates::Response& resp);

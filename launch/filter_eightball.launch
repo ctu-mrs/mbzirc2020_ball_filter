@@ -29,6 +29,7 @@
       <!-- Subscribers -->
       <remap from="~detections" to="object_detect/detected_balls" />
       <remap from="~detections_bfx" to="object_detect_bfx/detected_balls" />
+      <remap from="~detections_depth" to="depth_detect/detections" />
 
       <!-- Publishers -->
       <remap from="~measurement_filter" to="~measurement_filter" />
