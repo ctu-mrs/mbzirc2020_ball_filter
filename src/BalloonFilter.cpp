@@ -1928,7 +1928,7 @@ namespace balloon_filter
     constexpr bool time_consistent = false;
     m_sh_detections = smgr.create_handler<detections_t, time_consistent>("detections", ros::Duration(5.0));
     m_sh_detections_bfx = smgr.create_handler<detections_t, time_consistent>("detections_bfx", ros::Duration(5.0));
-    m_sh_depth_detections = smgr.create_handler<depth_detections_t, time_consistent>("depth_detections", ros::Duration(5.0));
+    m_sh_depth_detections = smgr.create_handler<depth_detections_t, time_consistent>("detections_depth", ros::Duration(5.0));
 
     m_reset_estimates_server = nh.advertiseService("reset_estimates", &BalloonFilter::reset_estimates_callback, this);
     //}
