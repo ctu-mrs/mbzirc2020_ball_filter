@@ -1727,7 +1727,6 @@ namespace balloon_filter
           if (!tfd.has_value())
           {
             ROS_ERROR("Safety area could not be transformed!");
-            ros::shutdown();
           }
           else
           {
@@ -1755,7 +1754,6 @@ namespace balloon_filter
           if (!tfd.has_value())
           {
             ROS_ERROR("Safety area could not be transformed!");
-            ros::shutdown();
           }
           else
           {
@@ -1784,7 +1782,6 @@ namespace balloon_filter
           if (!tfd.has_value())
           {
             ROS_ERROR("Safety area could not be transformed!");
-            ros::shutdown();
           }
           else
           {
@@ -1805,17 +1802,14 @@ namespace balloon_filter
       catch (mrs_lib::SafetyZone::BorderError)
       {
         ROS_ERROR("[%s]: Exception caught. Wrong configruation for the safety zone border polygon.", m_node_name.c_str());
-        ros::shutdown();
       }
       catch (mrs_lib::SafetyZone::PolygonObstacleError)
       {
         ROS_ERROR("[%s]: Exception caught. Wrong configuration for one of the safety zone polygon obstacles.", m_node_name.c_str());
-        ros::shutdown();
       }
       catch (mrs_lib::SafetyZone::PointObstacleError)
       {
         ROS_ERROR("[%s]: Exception caught. Wrong configuration for one of the safety zone point obstacles.", m_node_name.c_str());
-        ros::shutdown();
       }
       m_safety_area_init_timer.stop();
       m_is_initialized = true;
