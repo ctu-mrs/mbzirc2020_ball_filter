@@ -1896,7 +1896,7 @@ namespace balloon_filter
     }
     else
     {
-      m_safety_area_initialized = false;
+      m_safety_area_initialized = true;
     }
     
     //}

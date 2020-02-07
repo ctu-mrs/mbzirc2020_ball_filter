@@ -97,7 +97,7 @@ namespace balloon_filter
   class BalloonFilter : public nodelet::Nodelet
   {
     public:
-      BalloonFilter() : m_is_initialized(false), m_node_name("BalloonFilter") {};
+      BalloonFilter() : m_is_initialized(false), m_safety_area_initialized(false), m_node_name("BalloonFilter") {};
       virtual void onInit();
 
     private:
