@@ -110,9 +110,7 @@ namespace balloon_filter
       void lpf_loop(const ros::TimerEvent& evt);
       void prediction_loop(const ros::TimerEvent& evt);
 
-      void process_detections(const detections_t& detections);
-      void process_detections(const depth_detections_t& detections_msg);
-      void process_measurements(const std::vector<pos_cov_t>& measurements, const std_msgs::Header& header);
+      void process_measurement(const geometry_msgs::PoseWithCovarianceStamped& msg);
       void init_safety_area(const ros::TimerEvent& evt);
 
     private:
@@ -174,9 +172,9 @@ namespace balloon_filter
       std::unique_ptr<drmgr_t> m_drmgr_ptr;
       tf2_ros::Buffer m_tf_buffer;
       std::unique_ptr<tf2_ros::TransformListener> m_tf_listener_ptr;
-      mrs_lib::SubscribeHandlerPtr<detections_t> m_sh_detections;
-      mrs_lib::SubscribeHandlerPtr<detections_t> m_sh_detections_bfx;
-      mrs_lib::SubscribeHandlerPtr<depth_detections_t> m_sh_depth_detections;
+      /* mrs_lib::SubscribeHandlerPtr<detections_t> m_sh_detections; */
+      /* mrs_lib::SubscribeHandlerPtr<detections_t> m_sh_detections_bfx; */
+      mrs_lib::SubscribeHandlerPtr<geometry_msgs::PoseWithCovarianceStamped> m_sh_localized;
 
       ros::Publisher m_pub_meas_filt_dbg;
 

@@ -18,14 +18,8 @@ namespace balloon_filter
     prev_stamp = cur_stamp;
     load_dynparams(m_drmgr_ptr->config);
 
-    if (m_sh_detections->new_data())
-      process_detections(*m_sh_detections->get_data());
-
-    if (m_sh_detections_bfx->new_data())
-      process_detections(*m_sh_detections_bfx->get_data());
-
-    if (m_sh_depth_detections->new_data())
-      process_detections(*m_sh_depth_detections->get_data());
+    if (m_sh_localized->new_data())
+      process_measurement(*(m_sh_localized->get_data()));
 
     const auto lkf_last_update = get_mutexed(m_lkf_estimate_mtx, m_lkf_last_update);
     if ((ros::Time::now() - lkf_last_update).toSec() >= m_max_time_since_update)
@@ -252,134 +246,21 @@ namespace balloon_filter
   }
   //}
 
-  /* process_detections() method //{ */
-  void BalloonFilter::process_detections(const detections_t& detections_msg)
+  /* process_measurement() method //{ */
+  void BalloonFilter::process_measurement(const geometry_msgs::PoseWithCovarianceStamped& msg)
   {
-    if (!detections_msg.detections.empty())
+    if (msg.header.frame_id != m_world_frame_id)
     {
-      /* ROS_INFO("[%s]: Processing %lu new detections vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv", m_node_name.c_str(), detections_msg.poses.size()); */
-  
-      // transform the message to usable measurement format
-      std::vector<pos_cov_t> measurements = message_to_positions(detections_msg);
-      process_measurements(measurements, detections_msg.header);
-    } else
-    {
-      ROS_INFO_THROTTLE(MSG_THROTTLE, "[%s]: Empty detections message received", m_node_name.c_str());
-    }
-  }
-  //}
-
-  /* process_detections() method //{ */
-  void BalloonFilter::process_detections(const depth_detections_t& detections_msg)
-  {
-    if (!detections_msg.detections.empty())
-    {
-      /* ROS_INFO("[%s]: Processing %lu new detections vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv", m_node_name.c_str(), detections_msg.poses.size()); */
-  
-      // transform the message to usable measurement format
-      std::vector<pos_cov_t> measurements = message_to_positions(detections_msg);
-      process_measurements(measurements, detections_msg.header);
-    } else
-    {
-      ROS_INFO_THROTTLE(MSG_THROTTLE, "[%s]: Empty detections message received", m_node_name.c_str());
-    }
-  }
-  //}
-
-  /* process_measurements() method //{ */
-  void BalloonFilter::process_measurements(const std::vector<pos_cov_t>& measurements, const std_msgs::Header& header)
-  {
-    /* choose one or none valid measurement to use //{ */
-  
-    if (m_prev_measurements.empty())
-    {
-      m_prev_measurements.push_back({measurements, header.stamp});
+      ROS_ERROR("[BalloonFilter]: Message is in wrong frame: '%s' (expected '%s'). Skipping!", msg.header.frame_id.c_str(), m_world_frame_id.c_str());
       return;
     }
+    pos_cov_t chosen_meas;
+    chosen_meas.pos.x() = msg.pose.pose.position.x;
+    chosen_meas.pos.y() = msg.pose.pose.position.y;
+    chosen_meas.pos.z() = msg.pose.pose.position.z;
+    chosen_meas.cov = msg2cov(msg.pose.covariance);
   
-    const auto [prev_measurements, prev_measurements_stamp] = find_closest_dt(m_prev_measurements, header.stamp, m_meas_filt_desired_dt);
-    const double dt = (header.stamp - prev_measurements_stamp).toSec();
-    ROS_INFO_THROTTLE(1.0, "[BalloonFilter]: Using detection with %.2fs dt.", dt);
-    const auto chosen_meass_opt = find_speed_compliant_measurement(prev_measurements, measurements, ball_speed_at_time(header.stamp), dt, m_meas_filt_loglikelihood_threshold, m_meas_filt_covariance_inflation);
-    m_prev_measurements.push_back({measurements, header.stamp});
-    if (!chosen_meass_opt.has_value())
-    {
-      ROS_WARN_THROTTLE(1.0, "[BalloonFilter]: No detections complied with the expected speed, skipping.");
-      return;
-    }
-    const auto chosen_meas_prev = chosen_meass_opt.value().first;
-    const auto chosen_meas = chosen_meass_opt.value().second;
-  
-    /* publish the results //{ */
-  
-    {
-      std_msgs::Header header;
-      header.frame_id = m_world_frame_id;
-      header.stamp = header.stamp;
-  
-      /* publish the chosen measurement as the dedicated message */
-      m_pub_chosen_meas.publish(to_output_message(chosen_meas, header));
-  
-      /* publish the chosen measurement as PoseWithCovarianceStamped for debugging and visualisation purposes */
-      m_pub_chosen_meas_dbg.publish(to_output_message2(chosen_meas, header));
-  
-      /* publish debug output of the measurement choosing filter //{ */
-      {
-        const size_t n_pts = measurements.size() + prev_measurements.size();
-        sensor_msgs::PointCloud2 ret;
-        ret.header = header;
-        ret.height = 1;
-        ret.width = n_pts;
-  
-        {
-          // Prepare the PointCloud2
-          sensor_msgs::PointCloud2Modifier modifier(ret);
-          modifier.setPointCloud2Fields(4, "x", 1, sensor_msgs::PointField::FLOAT32,
-                                           "y", 1, sensor_msgs::PointField::FLOAT32,
-                                           "z", 1, sensor_msgs::PointField::FLOAT32,
-                                           "type", 1, sensor_msgs::PointField::INT32);
-          modifier.resize(n_pts);
-        }
-  
-        {
-          // Fill the PointCloud2
-          sensor_msgs::PointCloud2Iterator<float> iter_x(ret, "x");
-          sensor_msgs::PointCloud2Iterator<float> iter_y(ret, "y");
-          sensor_msgs::PointCloud2Iterator<float> iter_z(ret, "z");
-          sensor_msgs::PointCloud2Iterator<int32_t> iter_type(ret, "type");
-          for (size_t it = 0; it < measurements.size(); it++, ++iter_x, ++iter_y, ++iter_z, ++iter_type)
-          {
-            const auto& pt = measurements.at(it);
-            *iter_x = pt.pos.x();
-            *iter_y = pt.pos.y();
-            *iter_z = pt.pos.z();
-            if (pt.pos == chosen_meas.pos && pt.cov == chosen_meas.cov)
-              *iter_type = 0;
-            else
-              *iter_type = 1;
-          }
-          for (size_t it = 0; it < prev_measurements.size(); it++, ++iter_x, ++iter_y, ++iter_z, ++iter_type)
-          {
-            const auto& pt = prev_measurements.at(it);
-            *iter_x = pt.pos.x();
-            *iter_y = pt.pos.y();
-            *iter_z = pt.pos.z();
-            if (pt.pos == chosen_meas_prev.pos && pt.cov == chosen_meas_prev.cov)
-              *iter_type = 2;
-            else
-              *iter_type = 3;
-          }
-        }
-        m_pub_meas_filt_dbg.publish(ret);
-      }
-      //}
-    }
-  
-    //}
-  
-    add_rheiv_data(chosen_meas.pos, chosen_meas.cov, header.stamp);
-  
-    //}
+    add_rheiv_data(chosen_meas.pos, chosen_meas.cov, msg.header.stamp);
   
     // copy the latest plane fit
     const auto [plane_theta_valid, plane_theta] = get_mutexed(m_rheiv_theta_mtx, m_rheiv_theta_valid, m_rheiv_theta);
@@ -408,20 +289,20 @@ namespace balloon_filter
   
       if (m_ukf_estimate_exists)
       {
-        update_ukf_estimate(chosen_meas, header.stamp, plane_theta);
+        update_ukf_estimate(chosen_meas, msg.header.stamp, plane_theta);
       }
       else
       {
-        init_ukf_estimate(header.stamp, plane_theta);
-        lpf_reset(m_ukf_estimate.x, header.stamp);
+        init_ukf_estimate(msg.header.stamp, plane_theta);
+        lpf_reset(m_ukf_estimate.x, msg.header.stamp);
       }
   
       /* publish the filtered curvature //{ */
   
       {
-        const auto filtered = lpf_filter_states(m_ukf_estimate.x, header.stamp);
+        const auto filtered = lpf_filter_states(m_ukf_estimate.x, msg.header.stamp);
         mrs_msgs::Float64Stamped msg;
-        msg.header = header;
+        msg.header = msg.header;
         msg.value = filtered;
         m_pub_lpf.publish(msg);
       }
@@ -435,10 +316,6 @@ namespace balloon_filter
       {
         ROS_WARN_STREAM_THROTTLE(MSG_THROTTLE, "[UKF] RHEIV plane theta estimate unavailable, cannot update UKF!");
       }
-      if (!measurements.empty())
-      {
-        ROS_WARN_STREAM_THROTTLE(MSG_THROTTLE, "[UKF] Got empty detection message, cannot update UKF!");
-      }
     }  // if (!measurements.empty() && plane_theta_valid)
   
     //}
@@ -447,16 +324,16 @@ namespace balloon_filter
   
     if (m_lkf_estimate_exists)
     {
-      update_lkf_estimate(chosen_meas, header.stamp);
+      update_lkf_estimate(chosen_meas, msg.header.stamp);
     }
     else
     {
-      init_lkf_estimate(header.stamp);
+      init_lkf_estimate(msg.header.stamp);
     }
   
     //}
   
-    ros::Duration del = ros::Time::now() - header.stamp;
+    ros::Duration del = ros::Time::now() - msg.header.stamp;
     ROS_INFO_STREAM_THROTTLE(MSG_THROTTLE, "[KF]: delay (from image acquisition): " << del.toSec() * 1000.0 << "ms");
     /* ROS_INFO("[%s]: New data processed          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^", m_node_name.c_str()); */
   }
@@ -1439,126 +1316,6 @@ namespace balloon_filter
   /* } */
   /* //} */
 
-  /* message_to_positions() method //{ */
-  std::vector<pos_cov_t> BalloonFilter::message_to_positions(const detections_t& det_msg)
-  {
-    std::vector<pos_cov_t> ret;
-
-    // Construct a new world to sensor transform
-    Eigen::Affine3d s2w_tf;
-    bool tf_ok = get_transform_to_world(det_msg.header.frame_id, det_msg.header.stamp, s2w_tf);
-    if (!tf_ok)
-      return ret;
-    const Eigen::Matrix3d s2w_rot = s2w_tf.rotation();
-
-    ret.reserve(det_msg.detections.size());
-    for (const auto& det : det_msg.detections)
-    {
-      const auto msg_pos = det.pose.pose;
-      const auto msg_cov = det.pose.covariance;
-      const pos_t pos = s2w_tf * pos_t(msg_pos.position.x, msg_pos.position.y, msg_pos.position.z);
-      if (point_valid(pos))
-      {
-        const cov_t cov = rotate_covariance(msg2cov(msg_cov), s2w_rot);
-        const pos_cov_t pos_cov{pos, cov};
-        ret.push_back(pos_cov);
-      } else
-      {
-        ROS_INFO("[%s]: Skipping invalid point [%.2f, %.2f, %.2f] (original: [%.2f %.2f %.2f])", m_node_name.c_str(), pos.x(), pos.y(), pos.z(),
-                 msg_pos.position.x, msg_pos.position.y, msg_pos.position.z);
-      }
-    }
-
-    return ret;
-  }
-  //}
-
-  /* message_to_positions() method //{ */
-  std::vector<pos_cov_t> BalloonFilter::message_to_positions(const depth_detections_t& det_msg)
-  {
-    // Construct a new world to sensor transform
-    Eigen::Affine3d s2w_tf;
-    bool tf_ok = get_transform_to_world(det_msg.header.frame_id, det_msg.header.stamp, s2w_tf);
-    if (!tf_ok)
-      return {};
-    const Eigen::Matrix3d s2w_rot = s2w_tf.rotation();
-
-    std::vector<pos_cov_t> ball_dets;
-    std::vector<pos_cov_t> mav_dets;
-
-    ball_dets.reserve(det_msg.detections.size());
-    mav_dets.reserve(det_msg.detections.size());
-
-    for (const auto& det : det_msg.detections)
-    {
-      const auto msg_pos = det.pose.pose;
-      const auto msg_cov = det.pose.covariance;
-      const pos_t pos = s2w_tf * pos_t(msg_pos.position.x, msg_pos.position.y, msg_pos.position.z);
-      if (point_valid(pos))
-      {
-        const cov_t cov = rotate_covariance(msg2cov(msg_cov), s2w_rot);
-        const pos_cov_t pos_cov{pos, cov};
-        if (det.type == "ball")
-          ball_dets.push_back(pos_cov);
-        else if (det.type == "MAV")
-          ball_dets.push_back(pos_cov);
-        else
-          ROS_ERROR("[%s]: Unknown detection type '%s' received from DepthDetector", m_node_name.c_str(), det.type.c_str());
-      } else
-      {
-        ROS_INFO("[%s]: Skipping invalid point [%.2f, %.2f, %.2f] (original: [%.2f %.2f %.2f])", m_node_name.c_str(), pos.x(), pos.y(), pos.z(),
-                 msg_pos.position.x, msg_pos.position.y, msg_pos.position.z);
-      }
-    }
-
-    std::vector<pos_cov_t> ret;
-    if (mav_dets.empty())
-    {
-      ret.insert(std::begin(ret), std::begin(ball_dets), std::end(ball_dets));
-    }
-    else
-    {
-      double highest_mav_height = std::numeric_limits<double>::lowest();
-      pos_cov_t highest_mav_pos;
-      for (const auto& mav_pos : mav_dets)
-      {
-        const double cur_height = mav_pos.pos.z();
-        if (cur_height > highest_mav_height)
-        {
-          highest_mav_height = cur_height;
-          highest_mav_pos = mav_pos;
-        }
-      }
-      if (ball_dets.empty())
-      {
-        pos_cov_t result = highest_mav_pos;
-        result.pos.z() -= m_ball_wire_length;
-        ret.push_back(result);
-      }
-      else
-      {
-        double closest_ball_dist = std::numeric_limits<double>::max();
-        pos_cov_t closest_ball_pos;
-        for (const auto& ball_pos : ball_dets)
-        {
-          if (ball_pos.pos.z() < highest_mav_height)
-          {
-            const double cur_ball_dist = std::abs((ball_pos.pos - highest_mav_pos.pos).norm() - m_ball_wire_length);
-            if (cur_ball_dist < closest_ball_dist)
-            {
-              closest_ball_dist = cur_ball_dist;
-              closest_ball_pos = ball_pos;
-            }
-          }
-        }
-        ret.push_back(closest_ball_pos);
-      }
-    }
-
-    return ret;
-  }
-  //}
-
   /* msg2cov() method //{ */
   cov_t BalloonFilter::msg2cov(const ros_cov_t& msg_cov)
   {
@@ -1920,9 +1677,7 @@ namespace balloon_filter
     m_tf_listener_ptr = std::make_unique<tf2_ros::TransformListener>(m_tf_buffer, m_node_name);
     mrs_lib::SubscribeMgr smgr(nh);
     constexpr bool time_consistent = false;
-    m_sh_detections = smgr.create_handler<detections_t, time_consistent>("detections", ros::Duration(5.0));
-    m_sh_detections_bfx = smgr.create_handler<detections_t, time_consistent>("detections_bfx", ros::Duration(5.0));
-    m_sh_depth_detections = smgr.create_handler<depth_detections_t, time_consistent>("detections_depth", ros::Duration(5.0));
+    m_sh_localized = smgr.create_handler<geometry_msgs::PoseWithCovarianceStamped, time_consistent>("localized_ball", ros::Duration(5.0));
 
     m_reset_estimates_server = nh.advertiseService("reset_estimates", &BalloonFilter::reset_estimates_callback, this);
     //}
