@@ -20,6 +20,7 @@ find_package(catkin REQUIRED COMPONENTS
   message_generation
   object_detect
   depth_detect
+  uav_localize
   )
 
 # include Eigen3

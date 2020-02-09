@@ -35,9 +35,7 @@
       <rosparam file="$(arg world_file)" command="load" />
 
       <!-- Subscribers -->
-      <remap from="~detections" to="object_detect/detected_balls" />
-      <remap from="~detections_bfx" to="object_detect_bfx/detected_balls" />
-      <remap from="~detections_depth" to="depth_detect/detections" />
+      <remap from="~localized_ball" to="uav_localization/localized_uav" />
 
       <!-- Publishers -->
       <remap from="~measurement_filter" to="~measurement_filter" />
