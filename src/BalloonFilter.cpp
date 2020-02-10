@@ -339,6 +339,128 @@ namespace balloon_filter
   }
   //}
 
+  /* init_safety_area() method //{ */
+  void BalloonFilter::init_safety_area([[maybe_unused]] const ros::TimerEvent& evt)
+  {
+    assert(m_safety_area_border_points.cols() == 2);
+    const auto tf_opt = m_transformer.getTransform(m_safety_area_frame, m_world_frame_id);
+    if (!tf_opt.has_value())
+    {
+      ROS_ERROR("Safety area could not be transformed!");
+      return;
+    }
+
+    const auto tf = tf_opt.value();
+    /* transform border_points //{ */
+
+    {
+      for (int it = 0; it < m_safety_area_border_points.rows(); it++)
+      {
+        Eigen::Vector2d vec = m_safety_area_border_points.row(it);
+        geometry_msgs::Point pt;
+        pt.x = vec.x();
+        pt.y = vec.y();
+        pt.z = 0.0;
+        auto tfd = m_transformer.transformHeaderless(tf, pt);
+        if (!tfd.has_value())
+        {
+          ROS_ERROR("Safety area could not be transformed!");
+          return;
+        }
+        else
+        {
+          m_safety_area_border_points.row(it).x() = tfd.value().x;
+          m_safety_area_border_points.row(it).y() = tfd.value().y;
+        }
+      }
+    }
+
+    //}
+
+    /* transform polygon_obstacle_points //{ */
+
+    for (auto& mat : m_safety_area_polygon_obstacle_points)
+    {
+      for (int it = 0; it < mat.rows(); it++)
+      {
+        assert(mat.cols() == 3);
+        Eigen::Vector3d vec = mat.row(it);
+        geometry_msgs::Point pt;
+        pt.x = vec.x();
+        pt.y = vec.y();
+        pt.z = vec.z();
+        auto tfd = m_transformer.transformHeaderless(tf, pt);
+        if (!tfd.has_value())
+        {
+          ROS_ERROR("Safety area could not be transformed!");
+          return;
+        }
+        else
+        {
+          mat.row(it).x() = tfd.value().x;
+          mat.row(it).y() = tfd.value().y;
+          mat.row(it).z() = tfd.value().z;
+        }
+      }
+    }
+
+    //}
+
+    /* transform point_obstacle_points //{ */
+
+    for (auto& mat : m_safety_area_point_obstacle_points)
+    {
+      for (int it = 0; it < mat.rows(); it++)
+      {
+        assert(mat.cols() == 3);
+        Eigen::Vector3d vec = mat.row(it);
+        geometry_msgs::Point pt;
+        pt.x = vec.x();
+        pt.y = vec.y();
+        pt.z = vec.z();
+        auto tfd = m_transformer.transformHeaderless(tf, pt);
+        if (!tfd.has_value())
+        {
+          ROS_ERROR("Safety area could not be transformed!");
+          return;
+        }
+        else
+        {
+          mat.row(it).x() = tfd.value().x;
+          mat.row(it).y() = tfd.value().y;
+          mat.row(it).z() = tfd.value().z;
+        }
+      }
+    }
+
+    //}
+
+    try
+    {
+      m_safety_area = std::make_shared<mrs_lib::SafetyZone>(m_safety_area_border_points, m_safety_area_polygon_obstacle_points, m_safety_area_point_obstacle_points);
+      ROS_INFO("[%s]: Safety zone intialized!", m_node_name.c_str());
+    }
+    catch (mrs_lib::SafetyZone::BorderError)
+    {
+      ROS_ERROR("[%s]: Exception caught. Wrong configruation for the safety zone border polygon.", m_node_name.c_str());
+      return;
+    }
+    catch (mrs_lib::SafetyZone::PolygonObstacleError)
+    {
+      ROS_ERROR("[%s]: Exception caught. Wrong configuration for one of the safety zone polygon obstacles.", m_node_name.c_str());
+      return;
+    }
+    catch (mrs_lib::SafetyZone::PointObstacleError)
+    {
+      ROS_ERROR("[%s]: Exception caught. Wrong configuration for one of the safety zone point obstacles.", m_node_name.c_str());
+      return;
+    }
+    m_safety_area_init_timer.stop();
+    m_is_initialized = true;
+    m_safety_area_initialized = true;
+  }
+  //}
+
   // --------------------------------------------------------------
   // |                    RHEIV related methods                   |
   // --------------------------------------------------------------
@@ -1341,7 +1463,7 @@ namespace balloon_filter
   /* point_valid() method //{ */
   bool BalloonFilter::point_valid(const pos_t& pt)
   {
-    const bool height_valid = pt.z() > m_z_bounds_min && pt.z() < m_z_bounds_max;
+    const bool height_valid = pt.z() > m_bounds_z_min && pt.z() < m_bounds_z_max;
     const bool sane_values = !pt.array().isNaN().any() && !pt.array().isInf().any();
     const bool in_safety_area = !m_safety_area || m_safety_area->isPointValid(pt.x(), pt.y(), pt.z());
     return height_valid && sane_values && in_safety_area;
@@ -1414,8 +1536,8 @@ namespace balloon_filter
   /* load_dynparams() method //{ */
   void BalloonFilter::load_dynparams(drcfg_t cfg)
   {
-    m_z_bounds_min = cfg.z_bounds__min;
-    m_z_bounds_max = cfg.z_bounds__max;
+    m_bounds_z_min = cfg.bounds__z__min;
+    m_bounds_z_max = cfg.bounds__z__max;
     m_meas_filt_desired_dt = ros::Duration(cfg.meas_filt__desired_dt);
     m_meas_filt_loglikelihood_threshold = cfg.meas_filt__loglikelihood_threshold;
     m_meas_filt_covariance_inflation = cfg.meas_filt__covariance_inflation;
@@ -1455,123 +1577,6 @@ namespace balloon_filter
     //}
 
     m_lpf_cutoff_freq = cfg.lpf__cutoff_freq__curvature;
-  }
-  //}
-
-  /* init_safety_area() method //{ */
-  void BalloonFilter::init_safety_area([[maybe_unused]] const ros::TimerEvent& evt)
-  {
-    assert(m_safety_area_border_points.cols() == 2);
-    const auto tf_opt = m_transformer.getTransform(m_safety_area_frame, m_world_frame_id);
-    if (!tf_opt.has_value())
-    {
-      ROS_ERROR("Safety area could not be transformed!");
-    }
-    else
-    {
-      const auto tf = tf_opt.value();
-      /* transform border_points //{ */
-  
-      {
-        for (int it = 0; it < m_safety_area_border_points.rows(); it++)
-        {
-          Eigen::Vector2d vec = m_safety_area_border_points.row(it);
-          geometry_msgs::Point pt;
-          pt.x = vec.x();
-          pt.y = vec.y();
-          pt.z = 0.0;
-          auto tfd = m_transformer.transformHeaderless(tf, pt);
-          if (!tfd.has_value())
-          {
-            ROS_ERROR("Safety area could not be transformed!");
-          }
-          else
-          {
-            m_safety_area_border_points.row(it).x() = tfd.value().x;
-            m_safety_area_border_points.row(it).y() = tfd.value().y;
-          }
-        }
-      }
-  
-      //}
-  
-      /* transform polygon_obstacle_points //{ */
-  
-      for (auto& mat : m_safety_area_polygon_obstacle_points)
-      {
-        for (int it = 0; it < mat.rows(); it++)
-        {
-          assert(mat.cols() == 3);
-          Eigen::Vector3d vec = mat.row(it);
-          geometry_msgs::Point pt;
-          pt.x = vec.x();
-          pt.y = vec.y();
-          pt.z = vec.z();
-          auto tfd = m_transformer.transformHeaderless(tf, pt);
-          if (!tfd.has_value())
-          {
-            ROS_ERROR("Safety area could not be transformed!");
-          }
-          else
-          {
-            mat.row(it).x() = tfd.value().x;
-            mat.row(it).y() = tfd.value().y;
-            mat.row(it).z() = tfd.value().z;
-          }
-        }
-      }
-  
-      //}
-  
-      /* transform point_obstacle_points //{ */
-  
-      for (auto& mat : m_safety_area_point_obstacle_points)
-      {
-        for (int it = 0; it < mat.rows(); it++)
-        {
-          assert(mat.cols() == 3);
-          Eigen::Vector3d vec = mat.row(it);
-          geometry_msgs::Point pt;
-          pt.x = vec.x();
-          pt.y = vec.y();
-          pt.z = vec.z();
-          auto tfd = m_transformer.transformHeaderless(tf, pt);
-          if (!tfd.has_value())
-          {
-            ROS_ERROR("Safety area could not be transformed!");
-          }
-          else
-          {
-            mat.row(it).x() = tfd.value().x;
-            mat.row(it).y() = tfd.value().y;
-            mat.row(it).z() = tfd.value().z;
-          }
-        }
-      }
-  
-      //}
-  
-      try
-      {
-        m_safety_area = std::make_unique<mrs_lib::SafetyZone>(m_safety_area_border_points, m_safety_area_polygon_obstacle_points, m_safety_area_point_obstacle_points);
-        ROS_INFO("[%s]: Safety zone intialized!", m_node_name.c_str());
-      }
-      catch (mrs_lib::SafetyZone::BorderError)
-      {
-        ROS_ERROR("[%s]: Exception caught. Wrong configruation for the safety zone border polygon.", m_node_name.c_str());
-      }
-      catch (mrs_lib::SafetyZone::PolygonObstacleError)
-      {
-        ROS_ERROR("[%s]: Exception caught. Wrong configuration for one of the safety zone polygon obstacles.", m_node_name.c_str());
-      }
-      catch (mrs_lib::SafetyZone::PointObstacleError)
-      {
-        ROS_ERROR("[%s]: Exception caught. Wrong configuration for one of the safety zone point obstacles.", m_node_name.c_str());
-      }
-      m_safety_area_init_timer.stop();
-      m_is_initialized = true;
-      m_safety_area_initialized = true;
-    }
   }
   //}
 

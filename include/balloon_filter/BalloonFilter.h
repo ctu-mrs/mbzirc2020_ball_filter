@@ -136,8 +136,8 @@ namespace balloon_filter
       double m_meas_filt_covariance_inflation;
       double m_max_time_since_update;
       double m_min_updates_to_confirm;
-      double m_z_bounds_min;
-      double m_z_bounds_max;
+      double m_bounds_z_min;
+      double m_bounds_z_max;
 
       ros::Duration m_ukf_init_history_duration;
       UKF::x_t m_ukf_process_std;
@@ -272,7 +272,7 @@ namespace balloon_filter
       using prev_measurement_t = std::tuple<std::vector<pos_cov_t>, ros::Time>;
       using prev_measurements_t = boost::circular_buffer<prev_measurement_t>;
       prev_measurements_t m_prev_measurements;
-      std::unique_ptr<mrs_lib::SafetyZone> m_safety_area;
+      std::shared_ptr<mrs_lib::SafetyZone> m_safety_area;
 
     private:
 

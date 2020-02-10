@@ -16,7 +16,7 @@ meas_filt:
 
 lkf:
   use_acceleration: true # whether to include acceleration in the system model
-  min_init_points: 5
+  min_init_points: 25
   max_speed_err: 3.5 # metre per second
   prediction_horizon: 2.0 # seconds
   prediction_step: 0.5 # seconds
@@ -52,13 +52,14 @@ lpf:
   cutoff_freq:
     curvature: 0.5 # hertz
 
-z_bounds: # measurements outside these bounds will be ignored
-  min: 5  # metres
-  max: 20 # metres
+bounds: # measurements outside these bounds will be ignored
+  z:
+    min: 5  # metres
+    max: 15 # metres
 
 rheiv:
   fitting_period: 1.0 # seconds
   min_points: 600
-  max_points: 900
+  max_points: 1000
   visualization_size: 20 # metres
   timeout: 3.0 # seconds
