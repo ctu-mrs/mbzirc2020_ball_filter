@@ -47,7 +47,7 @@
       <remap from="~fit_points" to="~fit_points" />
       <remap from="~fitted_plane" to="~fitted_plane" />
       <remap from="~ball_prediction" to="~ball_prediction" />
-      <remap from="~predicted_path" to="~predicted_path" />
+      <remap from="~predicted_path" to="~predicted_path_" />
 
       <remap from="~low_pass_filtered" to="~low_pass_filtered" />
 

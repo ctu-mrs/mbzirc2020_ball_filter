@@ -1,6 +1,6 @@
 processing_period: 0.01 # seconds
 prediction_period: 0.05 # seconds
-max_time_since_update: 4.0 # seconds
+max_time_since_update: 20.0 # seconds
 min_updates_to_confirm: 8
 
 ball_wire_length: 1.45 # metres
@@ -16,26 +16,26 @@ meas_filt:
 
 lkf:
   use_acceleration: true # whether to include acceleration in the system model
-  min_init_points: 25
+  min_init_points: 10
   max_speed_err: 3.5 # metre per second
   prediction_horizon: 2.0 # seconds
   prediction_step: 0.5 # seconds
-  init_history_duration: 10.0 # seconds
+  init_history_duration: 20.0 # seconds
 
   process_std:
-    position: 1.0
-    velocity: 0.5
-    acceleration: 10.0
+    position: 0.1
+    velocity: 0.05
+    acceleration: 1.0
 
   init_std:
-    velocity: 8.0
-    acceleration: 2.0
+    velocity: 1.0
+    acceleration: 1.0
 
 ukf:
   min_radius: 1.5 # for estimated abs. curvatures larger than this, the UKF will be reset to sanitize the output
   prediction_horizon: 10.0 # seconds
   prediction_step: 0.5 # seconds
-  init_history_duration: 10.0 # seconds
+  init_history_duration: 20.0 # seconds
 
   process_std:
     position: 5.0
@@ -59,7 +59,7 @@ bounds: # measurements outside these bounds will be ignored
 
 rheiv:
   fitting_period: 1.0 # seconds
-  min_points: 600
-  max_points: 1000
+  min_points: 9999999
+  max_points: 9999999
   visualization_size: 20 # metres
   timeout: 3.0 # seconds

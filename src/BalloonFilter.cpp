@@ -204,6 +204,7 @@ namespace balloon_filter
     filter_state.ukf_state.valid = false;
     filter_state.lkf_state.valid = false;
     nav_msgs::Path predicted_path;
+    predicted_path.header = message.header;
 
     if (lkf_estimate_exists && lkf_n_updates > m_min_updates_to_confirm)
     {
@@ -1562,6 +1563,7 @@ namespace balloon_filter
 
     /* LKF-related //{ */
     
+    m_lkf_min_init_points = cfg.lkf__min_init_points;
     m_lkf_prediction_horizon = cfg.lkf__prediction_horizon;
     m_lkf_max_speed_err = cfg.lkf__max_speed_err;
     
@@ -1575,6 +1577,8 @@ namespace balloon_filter
       m_lkf_init_std(lkf::x::ddx) = m_lkf_init_std(lkf::x::ddy) = m_lkf_init_std(lkf::x::ddz) = cfg.lkf__init_std__acceleration;
     
     //}
+
+    m_rheiv_min_pts = cfg.rheiv__min_points;
 
     m_lpf_cutoff_freq = cfg.lpf__cutoff_freq__curvature;
   }
@@ -1619,7 +1623,6 @@ namespace balloon_filter
     // TODO: set the time in some smarter manner
     m_ball_speed_change = ros::Time::now() + ball_speed_change_after;
     pl.load_param("rheiv/fitting_period", m_rheiv_fitting_period);
-    pl.load_param("rheiv/min_points", m_rheiv_min_pts);
     pl.load_param("rheiv/max_points", m_rheiv_max_pts);
     pl.load_param("rheiv/visualization_size", m_rheiv_visualization_size);
     const double rheiv_timeout_s = pl.load_param2<double>("rheiv/timeout");
@@ -1628,7 +1631,6 @@ namespace balloon_filter
     pl.load_param("ukf/prediction_step", m_ukf_prediction_step);
 
     pl.load_param("lkf/use_acceleration", m_lkf_use_acceleration);
-    pl.load_param("lkf/min_init_points", m_lkf_min_init_points);
     pl.load_param("lkf/init_history_duration", m_lkf_init_history_duration);
     pl.load_param("lkf/prediction_step", m_lkf_prediction_step);
 
