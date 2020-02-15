@@ -19,7 +19,7 @@
   <depend>std_msgs</depend>
   <depend>mrs_msgs</depend>
   <depend>object_detect</depend>
-  <depend>depth_detect</depend>
+  <depend>uav_detect</depend>
   <depend>uav_localize</depend>
   <depend>nodelet</depend>
 

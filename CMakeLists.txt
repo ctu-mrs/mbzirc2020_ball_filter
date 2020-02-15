@@ -19,7 +19,7 @@ find_package(catkin REQUIRED COMPONENTS
   pcl_ros
   message_generation
   object_detect
-  depth_detect
+  uav_detect
   uav_localize
   )
 
