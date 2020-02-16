@@ -208,14 +208,20 @@ namespace balloon_filter
 
         {
           // align plane points to the XY plane
-          Eigen::Quaternionf quat = plane_orientation(theta).inverse().cast<float>();
+          const Eigen::Vector3f normal = theta.block<3, 1>(0, 0).cast<float>();
+          const float d = -theta(3);
+          const Eigen::Quaternionf quat = Eigen::Quaternionf::FromTwoVectors(normal, Eigen::Vector3f::UnitZ());
+          const Eigen::Vector3f offset_pt = normal*d/(normal.dot(normal));
+
           for (auto& pt : pointcloud->points)
-            pt.getVector3fMap() = quat * pt.getVector3fMap();
+            pt.getVector3fMap() = quat * (pt.getVector3fMap() - offset_pt);
+          pointcloud->header.frame_id = m_world_frame_id;
+          m_pub_pcl_dbg.publish(pointcloud);
 
           // fit a 2D circle to the points
           auto model_c2d = boost::make_shared<pcl::SampleConsensusModelCircle2D<pt_XYZ_t>>(pointcloud);
           pcl::RandomSampleConsensus<pt_XYZ_t> fitter(model_c2d);
-          fitter.setDistanceThreshold(m_circle_threshold_distance);
+          fitter.setDistanceThreshold(m_circle_fit_threshold_distance);
           fitter.computeModel();
           Eigen::VectorXf params;
           fitter.getModelCoefficients(params);
@@ -237,13 +243,18 @@ namespace balloon_filter
             {
               ROS_INFO_THROTTLE(MSG_THROTTLE, "[RHEIV]: Fitted circle with radius %.2fm to points on the plane (%lus/%lus points are inliers).", radius,
                                 inliers.size(), pointcloud->size());
-              const auto msg = circle_visualization(params(0), params(1), radius, theta, header);
+
+              {
+                std::scoped_lock lck(m_circle_mtx);
+                m_circle_valid = true;
+                m_circle.center = (quat.inverse()*Eigen::Vector3f{params(0), params(1), 0} + offset_pt).cast<double>();
+                m_circle.normal = normal.normalized().cast<double>();
+                m_circle.radius = params(2);
+              }
+
+              const auto msg = circle_visualization(m_circle, header);
               m_pub_circle_dbg.publish(msg);
 
-              std::scoped_lock lck(m_circle_mtx);
-              m_circle_valid = true;
-              m_circle_last_fit_plane = theta;
-              m_circle_last_fit = params;
             }
           } else
           {
@@ -354,13 +365,26 @@ namespace balloon_filter
       ROS_ERROR("[BalloonFilter]: Message is in wrong frame: '%s' (expected '%s'). Skipping!", msg.header.frame_id.c_str(), m_world_frame_id.c_str());
       return;
     }
-    pos_cov_t chosen_meas;
-    chosen_meas.pos.x() = msg.pose.pose.position.x;
-    chosen_meas.pos.y() = msg.pose.pose.position.y;
-    chosen_meas.pos.z() = msg.pose.pose.position.z;
-    chosen_meas.cov = msg2cov(msg.pose.covariance);
 
-    add_rheiv_data(chosen_meas.pos, chosen_meas.cov, msg.header.stamp);
+    pose_cov_t det_pose;
+    det_pose.pos_cov.pos.x() = msg.pose.pose.position.x;
+    det_pose.pos_cov.pos.y() = msg.pose.pose.position.y;
+    det_pose.pos_cov.pos.z() = msg.pose.pose.position.z;
+    det_pose.pos_cov.cov = msg2cov(msg.pose.covariance);
+
+    // check if the direction covariance is sufficiently low to use it
+    if (msg.pose.covariance.at(6*6-1) < M_PI_2)
+    {
+      quat_t quat;
+      quat.w() = msg.pose.pose.orientation.w;
+      quat.x() = msg.pose.pose.orientation.x;
+      quat.y() = msg.pose.pose.orientation.y;
+      quat.z() = msg.pose.pose.orientation.z;
+      const cov_t ypr_cov = msg2cov(msg.pose.covariance, 3);
+      det_pose.ori_cov = {quat, ypr_cov};
+    }
+
+    add_rheiv_data(det_pose.pos_cov.pos, det_pose.pos_cov.cov, msg.header.stamp);
 
     // copy the latest plane fit
     const auto [plane_theta_valid, plane_theta] = get_mutexed(m_rheiv_theta_mtx, m_rheiv_theta_valid, m_rheiv_theta);
@@ -389,7 +413,7 @@ namespace balloon_filter
 
       if (m_ukf_estimate_exists)
       {
-        update_ukf_estimate(chosen_meas, msg.header.stamp, plane_theta);
+        update_ukf_estimate(det_pose, msg.header.stamp, plane_theta);
       } else
       {
         init_ukf_estimate(msg.header.stamp, plane_theta);
@@ -397,10 +421,10 @@ namespace balloon_filter
 
       //}
 
-      const auto [circle_valid, circle_plane_theta, circle_params] = get_mutexed(m_circle_mtx, m_circle_valid, m_circle_last_fit_plane, m_circle_last_fit);
+      const auto [circle_valid, circle3d] = get_mutexed(m_circle_mtx, m_circle_valid, m_circle);
       // if we have a fitted circle, use it to correct the UKF estimated curvature
       if (circle_valid)
-        update_ukf_estimate(circle_plane_theta, circle_params);
+        update_ukf_estimate(circle3d, plane_theta);
 
     } else
     {
@@ -416,7 +440,7 @@ namespace balloon_filter
 
     if (m_lkf_estimate_exists)
     {
-      update_lkf_estimate(chosen_meas, msg.header.stamp);
+      update_lkf_estimate(det_pose, msg.header.stamp);
     } else
     {
       init_lkf_estimate(msg.header.stamp);
@@ -596,21 +620,56 @@ namespace balloon_filter
   //}
 
   /* update_ukf_estimate() method //{ */
-  void BalloonFilter::update_ukf_estimate(const pos_cov_t& measurement, const ros::Time& stamp, const theta_t& plane_theta)
+  void BalloonFilter::update_ukf_estimate(const pose_cov_t& measurement, const ros::Time& stamp, const theta_t& plane_theta)
   {
     auto [ukf_estimate_exists, ukf_estimate, ukf_last_update, ukf_n_updates] =
         mrs_lib::get_mutexed(m_ukf_estimate_mtx, m_ukf_estimate_exists, m_ukf_estimate, m_ukf_last_update, m_ukf_n_updates);
 
-    ROS_INFO_THROTTLE(MSG_THROTTLE, "[UKF]: Updating current estimate using point [%.2f, %.2f, %.2f]", measurement.pos.x(), measurement.pos.y(),
-                      measurement.pos.z());
+    const auto pos = measurement.pos_cov.pos;
     const double dt = (stamp - ukf_last_update).toSec();
     if (dt < 0.0)
       return;
 
     ukf_estimate = predict_ukf_estimate(ukf_estimate, dt, plane_theta, ball_speed_at_time(ukf_last_update));
+    std::optional<double> yaw_opt = std::nullopt;
+    if (measurement.ori_cov.has_value())
+    {
+      ori_cov_t ori_cov = measurement.ori_cov.value();
+      // get the velocity direction of the measurement
+      const pos_t xvec3d = ori_cov.quat*pos_t::UnitX();
+      // rotation from the rheiv plane to the to the XY plane
+      const quat_t plane_invquat = plane_orientation(plane_theta).inverse();
+      // rotate the velocity vector to get its plane coordinates (it's just a vector, so no translation is required)
+      const pos_t xvec2d = plane_invquat*xvec3d;
+      // get the yaw of the velocity vector in the plane coordinates
+      yaw_opt = std::atan2(xvec2d.y(), xvec2d.x());
+    }
+
     {
       std::scoped_lock lck(m_ukf_mtx);
-      ukf_estimate = m_ukf.correct(ukf_estimate, measurement.pos, measurement.cov);
+      if (yaw_opt.has_value())
+      {
+        UKF::z_t z(4);
+        z << pos.x(), pos.y(), pos.z(), yaw_opt.value();
+        UKF::R_t R = UKF::R_t::Zero(4, 4);
+        R.block<3, 3>(0, 0) = measurement.pos_cov.cov;
+        R(3, 3) = measurement.ori_cov.value().ypr_cov(0, 0);
+
+        m_ukf.setObservationModel(ukf::obs_model_f_pose);
+        ukf_estimate = m_ukf.correct(ukf_estimate, z, R);
+        ROS_INFO_THROTTLE(MSG_THROTTLE, "[UKF]: Updating current estimate using point [%.2f, %.2f, %.2f] and yaw %.2f", pos.x(), pos.y(),
+                          pos.z(), yaw_opt.value());
+      }
+      else
+      {
+        UKF::z_t z = pos;
+        UKF::R_t R = measurement.pos_cov.cov;
+
+        m_ukf.setObservationModel(ukf::obs_model_f_pos);
+        ukf_estimate = m_ukf.correct(ukf_estimate, z, R);
+        ROS_INFO_THROTTLE(MSG_THROTTLE, "[UKF]: Updating current estimate using point [%.2f, %.2f, %.2f]", pos.x(), pos.y(),
+                          pos.z());
+      }
     }
     ukf_last_update = stamp;
     ukf_n_updates++;
@@ -622,50 +681,110 @@ namespace balloon_filter
   //}
 
   /* update_ukf_estimate() method //{ */
-  // This function doesn't increase the counters or stamps of the UKF!
-  void BalloonFilter::update_ukf_estimate(const theta_t& circle_plane, const circle_params_t& circle_params)
-  {
-    auto ukf_estimate =
-        mrs_lib::get_mutexed(m_ukf_estimate_mtx, m_ukf_estimate);
 
-    const auto cx = circle_params(0);
-    const auto cy = circle_params(1);
-    const auto radius = circle_params(2);
+  void add_vec_marker(pos_t orig, pos_t dir, visualization_msgs::MarkerArray& to_msg, std_msgs::Header header, pos_t color, int id)
+  {
+    visualization_msgs::Marker msg;
+    msg.header = header;
+    msg.id = id;
+    msg.pose.orientation.w = 1.0;
+    msg.color.a = 1;
+    msg.color.r = color.x();
+    msg.color.g = color.y();
+    msg.color.b = color.z();
+    msg.scale.x = 0.1;
+    msg.scale.y = 1.0;
+    msg.scale.z = 1.0;
+    msg.type = visualization_msgs::Marker::ARROW;
+    msg.pose.position.x = orig.x();
+    msg.pose.position.y = orig.y();
+    msg.pose.position.z = orig.z();
+    geometry_msgs::Point pt;
+    msg.points.push_back(pt);
+    pt.x = dir.x();
+    pt.y = dir.y();
+    pt.z = dir.z();
+    msg.points.push_back(pt);
+    to_msg.markers.push_back(msg);
+  }
+
+  // This function doesn't increase the counters or stamps of the UKF!
+  void BalloonFilter::update_ukf_estimate(const circle3d_t& circle, const theta_t& rheiv_plane)
+  {
+    auto ukf_estimate = mrs_lib::get_mutexed(m_ukf_estimate_mtx, m_ukf_estimate);
+
+    visualization_msgs::MarkerArray msg;
+    std_msgs::Header header;
+    header.stamp = ros::Time::now();
+    header.frame_id = m_world_frame_id;
+
+    int id = 0;
+    add_vec_marker({0,0,0}, circle.center, msg, header, {1,0,0}, id++);
+    // rotation FROM world TO circle plane
+    quat_t rot_to_circ_coords = quat_t::FromTwoVectors(circle.normal.cast<double>(), pos_t::UnitZ());
 
     const pos_t cur_pos = get_pos(ukf_estimate.x);
-    const pos_t pos2d = plane_orientation(circle_plane).inverse()*cur_pos;
-    const pos_t rel_pos = pos2d - pos_t(cx, cy, pos2d.z());
-    const double circ_dist = std::abs(rel_pos.norm() - radius);
-    double curv;
-    // check if point lies on the circle
-    if (circ_dist < m_circle_threshold_distance)
+    add_vec_marker({0,0,0}, cur_pos, msg, header, {0,0.5,0}, id++);
+
+    const pos_t diff_vec = cur_pos - circle.center;
+    add_vec_marker(circle.center, diff_vec, msg, header, {1,1,0}, id++);
+
+    const pos_t pos_circ_coords = rot_to_circ_coords*diff_vec;
+    add_vec_marker({0,0,0}, pos_circ_coords , msg, header, {0,1,0}, id++);
+
+    const double circ_dist = std::abs(pos_circ_coords .norm() - circle.radius);
+    UKF::z_t z(1);
+    UKF::R_t R(1, 1);
+
+    // orientation of the rheiv-fitted plane (in which we want the curvature oriented)
+    const quat_t rheiv_quat = plane_orientation(rheiv_plane);
+    // if the planes have different orientation, the curvature needs to be flipped
+    const bool plane_flip = anax_t(quat_t::FromTwoVectors(rheiv_quat*pos_t::UnitZ(), rot_to_circ_coords.inverse()*pos_t::UnitZ())).angle() < M_PI_2 ? false : true;
+    double yaw = ukf_estimate.x(ukf::x::yaw);
+    if (plane_flip)
     {
-      // find the correct sign of the curvature
-      const double pol_ang = std::atan2(rel_pos.y(), rel_pos.x());
-      const double norm_yaw = ukf_estimate.x(ukf::x::yaw) - pol_ang;
-      curv = 1.0/radius;
-      if (norm_yaw < 0.0)
-        curv = -curv;
-      ROS_INFO_THROTTLE(MSG_THROTTLE, "[UKF]: Updating current estimate using circle radius %.2fm to curvature %.2f", circle_params(2), curv);
+      ROS_ERROR("[]: FLIPPING");
+      yaw = yaw + M_PI;
+    }
+    const pos_t yaw_vec = 3.0*pos_t(cos(yaw), sin(yaw), 0);
+    add_vec_marker(pos_circ_coords, yaw_vec, msg, header, {0,0,1}, id++);
+
+    const pos_t yaw_vec_glob = rot_to_circ_coords.inverse()*yaw_vec;
+    add_vec_marker(circle.center, yaw_vec_glob, msg, header, {0,0,0.5}, id++);
+
+    add_vec_marker(circle.center, circle.normal, msg, header, {0.5,0.5,0.5}, id++);
+
+    const pos_t yaw_normal = pos_circ_coords.cross(yaw_vec);
+    add_vec_marker({0,0,0}, yaw_normal, msg, header, {1,1,1}, id++);
+    const double curv_sign = yaw_normal.z() > 0 ? 1.0 : -1.0;
+
+    m_pub_dbg.publish(msg);
+
+    // check if point lies on the circle
+    if (circ_dist < m_circle_snap_threshold_distance)
+    {
+
+      // if the yaw in the first quadrant is positive, curvature is also positive
+      z(0) = curv_sign/circle.radius; // but don't forget to compensate potential flip between rheiv and circle planes
+      // the measurement noise when the measurement is associated to the circle is a parameter
+      R(0) = m_ukf_meas_std_curv_circ;
+      ROS_INFO_THROTTLE(MSG_THROTTLE, "[UKF]: Updating current estimate using circle radius %.2fm to curvature %.2f", circle.radius, z(0));
     }
     else
     {
       // if the point does not lie on the circle, assume it's on the line
       // and set the curvature accordingly
-      curv = 0.0;
+      z(0) = 0.0;
+      // the measurement noise when the measurement is not associated to the circle is a different parameter
+      R(0) = m_ukf_meas_std_curv_line;
       ROS_INFO_THROTTLE(MSG_THROTTLE, "[UKF]: Updating current estimate using line");
     }
 
-    UKF::z_t z(1);
-    z(0) = curv;
-    UKF::R_t R(1, 1);
-    R << m_ukf_meas_std_curv;
-    {
-      std::scoped_lock lck(m_ukf_mtx);
-      m_ukf.setObservationModel(ukf::obs_model_f_curv);
-      m_ukf.correct(ukf_estimate, z, R);
-      m_ukf.setObservationModel(ukf::obs_model_f_pos);
-    }
+    /* { */
+    /*   std::scoped_lock lck(m_ukf_mtx); */
+    /*   m_ukf.setObservationModel(ukf::obs_model_f_curv); */
+    /*   ukf_estimate = m_ukf.correct(ukf_estimate, z, R); */
+    /* } */
 
     set_mutexed(m_ukf_estimate_mtx, std::make_tuple(ukf_estimate),
                 std::forward_as_tuple(m_ukf_estimate));
@@ -740,6 +859,7 @@ namespace balloon_filter
         statecov = predict_ukf_estimate(statecov, dt, plane_theta, ball_speed_at_time(prev_stamp));
         {
           std::scoped_lock lck(m_ukf_mtx);
+          m_ukf.setObservationModel(ukf::obs_model_f_pos);
           statecov = m_ukf.correct(statecov, cur_pt, cur_cov);
         }
         prev_stamp = cur_stamp;
@@ -820,19 +940,54 @@ namespace balloon_filter
   //}
 
   /* update_lkf_estimate() method //{ */
-  void BalloonFilter::update_lkf_estimate(const pos_cov_t& measurement, const ros::Time& stamp)
+  void BalloonFilter::update_lkf_estimate(const pose_cov_t& measurement, const ros::Time& stamp)
   {
     auto [lkf_estimate_exists, lkf_estimate, lkf_last_update, lkf_n_updates] =
         mrs_lib::get_mutexed(m_lkf_estimate_mtx, m_lkf_estimate_exists, m_lkf_estimate, m_lkf_last_update, m_lkf_n_updates);
 
-    ROS_INFO_THROTTLE(MSG_THROTTLE, "[LKF]: Updating current estimate using point [%.2f, %.2f, %.2f]", measurement.pos.x(), measurement.pos.y(),
-                      measurement.pos.z());
+    const auto pos = measurement.pos_cov.pos;
+    ROS_INFO_THROTTLE(MSG_THROTTLE, "[LKF]: Updating current estimate using point [%.2f, %.2f, %.2f]", pos.x(), pos.y(),
+                      pos.z());
     const double dt = (stamp - lkf_last_update).toSec();
     if (dt < 0.0)
       return;
 
     lkf_estimate = predict_lkf_estimate(lkf_estimate, dt);
-    lkf_estimate = m_lkf.correct(lkf_estimate, measurement.pos, measurement.cov);
+    std::optional<pos_t> vel_opt = std::nullopt;
+    if (measurement.ori_cov.has_value())
+    {
+      ori_cov_t ori_cov = measurement.ori_cov.value();
+      const pos_t xvec3d = ori_cov.quat*pos_t::UnitX();
+      vel_opt = xvec3d * ball_speed_at_time(stamp);
+    }
+
+    {
+      std::scoped_lock lck(m_ukf_mtx);
+      if (vel_opt.has_value())
+      {
+        pos_t vel = vel_opt.value();
+        LKF::z_t z(6);
+        z << pos.x(), pos.y(), pos.z(), vel.x(), vel.y(), vel.z();
+        UKF::R_t R = UKF::R_t::Zero(6, 6);
+        R.block<3, 3>(0, 0) = measurement.pos_cov.cov;
+        R.block<3, 3>(3, 3) = measurement.ori_cov.value().ypr_cov;
+
+        m_lkf.H = LKF::H_t::Identity(6, m_lkf_n_states);
+        lkf_estimate = m_lkf.correct(lkf_estimate, z, R);
+        ROS_INFO_THROTTLE(MSG_THROTTLE, "[LKF]: Updating current estimate using point [%.2f, %.2f, %.2f] and velocity [%.2f, %.2f, %.2f]", pos.x(), pos.y(),
+                          pos.z(), vel.x(), vel.y(), vel.z());
+      }
+      else
+      {
+        LKF::z_t z = pos;
+        LKF::R_t R = measurement.pos_cov.cov;
+
+        m_lkf.H = LKF::H_t::Identity(3, m_lkf_n_states);
+        lkf_estimate = m_lkf.correct(lkf_estimate, z, R);
+        ROS_INFO_THROTTLE(MSG_THROTTLE, "[lKF]: Updating current estimate using point [%.2f, %.2f, %.2f]", pos.x(), pos.y(),
+                          pos.z());
+      }
+    }
     lkf_last_update = stamp;
     lkf_n_updates++;
     lkf_estimate_exists = true;
@@ -910,6 +1065,8 @@ namespace balloon_filter
           speed_initd = true;
         }
         statecov = predict_lkf_estimate(statecov, dt);
+
+        m_lkf.H = LKF::H_t::Identity(3, m_lkf_n_states);
         statecov = m_lkf.correct(statecov, cur_pt, cur_cov);
         prev_stamp = cur_stamp;
       }
@@ -1010,95 +1167,6 @@ namespace balloon_filter
   }
   //}
 
-  /* calc_hyp_meas_loglikelihood() method //{ */
-  template <unsigned num_dimensions>
-  double BalloonFilter::calc_hyp_meas_loglikelihood(const pos_cov_t& hyp, const pos_cov_t& meas, const double cov_inflation)
-  {
-    const pos_t inn = meas.pos - hyp.pos;
-    const cov_t inn_cov = cov_inflation * (meas.cov + hyp.cov);
-    cov_t inverse;
-    bool invertible;
-    double determinant;
-    inn_cov.computeInverseAndDetWithCheck(inverse, determinant, invertible);
-    if (!invertible)
-      ROS_ERROR("[]: Covariance matrix of a measurement is not invertible!! May produce garbage.");
-    constexpr double dylog2pi = num_dimensions * std::log(2 * M_PI);
-    const double a = inn.transpose() * inverse * inn;
-    const double b = std::log(determinant);
-    const double res = -(a + b + dylog2pi) / 2.0;
-    return res;
-  }
-  //}
-
-  /* find_most_likely_association() method //{ */
-  std::tuple<pos_cov_t, double> BalloonFilter::find_most_likely_association(const pos_cov_t& prev_meas, const std::vector<pos_cov_t>& measurements,
-                                                                            const double expected_speed, const double dt, const double cov_inflation)
-  {
-    pos_cov_t most_likely;
-    double max_loglikelihood = std::numeric_limits<double>::lowest();
-    /* size_t it = 0; */
-    for (const auto& meas : measurements)
-    {
-      const auto diff_vec = meas.pos - prev_meas.pos;
-      const auto diff_vec_exp = diff_vec.normalized() * dt * expected_speed;
-      const auto err_vec = diff_vec - diff_vec_exp;
-      const pos_cov_t err_pos_cov{err_vec, meas.cov};
-      const pos_cov_t tmp_pos_cov{{0.0, 0.0, 0.0}, prev_meas.cov};
-      const double loglikelihood = calc_hyp_meas_loglikelihood<3>(tmp_pos_cov, err_pos_cov, cov_inflation);
-      /* ROS_INFO("[]: loglikelihood %lu: %.2f", it, loglikelihood); it++; */
-      if (loglikelihood > max_loglikelihood)
-      {
-        most_likely = meas;
-        max_loglikelihood = loglikelihood;
-      }
-    }
-    return {most_likely, max_loglikelihood};
-  }
-  //}
-
-  /* find_speed_compliant_measurement() method //{ */
-  std::optional<std::pair<pos_cov_t, pos_cov_t>> BalloonFilter::find_speed_compliant_measurement(const std::vector<pos_cov_t>& prev_meass,
-                                                                                                 const std::vector<pos_cov_t>& measurements,
-                                                                                                 const double expected_speed, const double dt,
-                                                                                                 const double loglikelihood_threshold,
-                                                                                                 const double cov_inflation)
-  {
-    std::optional<pos_cov_t> most_likely = std::nullopt;
-    std::optional<pos_cov_t> most_likely_prev = std::nullopt;
-    double max_loglikelihood = std::numeric_limits<double>::lowest();
-    /* size_t it = 0; */
-    for (const auto& prev_meas : prev_meass)
-    {
-      /* ROS_INFO("[]: Measurement %lu: ------", it); it++; */
-      const auto [association, loglikelihood] = find_most_likely_association(prev_meas, measurements, expected_speed, dt, cov_inflation);
-      if (loglikelihood > max_loglikelihood)
-      {
-        most_likely = association;
-        most_likely_prev = prev_meas;
-        max_loglikelihood = loglikelihood;
-      }
-    }
-    if (most_likely.has_value() && most_likely_prev.has_value())
-    {
-      if (max_loglikelihood > loglikelihood_threshold)
-      {
-        ROS_INFO_THROTTLE(1.0, "[BalloonFilter]: Picking measurement with likelihood %.2f", max_loglikelihood);
-        ROS_DEBUG("[BalloonFilter]: Picking measurement with likelihood %.2f", max_loglikelihood);
-      } else
-      {
-        ROS_INFO_THROTTLE(1.0, "[BalloonFilter]: No measurement sufficiently likely (most likely is %.2f)", max_loglikelihood);
-        ROS_DEBUG("[BalloonFilter]: No measurement sufficiently likely (most likely is %.2f)", max_loglikelihood);
-        return std::nullopt;
-      }
-    } else
-    {
-      ROS_INFO("[BalloonFilter]: No measurement available!");
-      return std::nullopt;
-    }
-    return std::make_pair(most_likely_prev.value(), most_likely.value());
-  }
-  //}
-
   /* get_pos() method //{ */
   template <class T>
   pos_t BalloonFilter::get_pos(const T& x)
@@ -1120,14 +1188,11 @@ namespace balloon_filter
 
   /* to_output_message() method overloads //{ */
 
-  visualization_msgs::MarkerArray BalloonFilter::circle_visualization(const float cx, const float cy, const float radius, const theta_t& plane_theta,
-                                                                      const std_msgs::Header& header)
+  visualization_msgs::MarkerArray BalloonFilter::circle_visualization(const circle3d_t& circle, const std_msgs::Header& header)
   {
     visualization_msgs::MarkerArray ret;
-    const quat_t quat = plane_orientation(plane_theta);
-    using anax_t = Eigen::AngleAxisd;
-    const double plane_sign = anax_t(quat_t::FromTwoVectors(pos_t::UnitZ(), quat*pos_t::UnitZ())).angle() < M_PI_2 ? -1.0 : 1.0;
-    const double offset = plane_sign * plane_theta(3) / plane_theta.block<3, 1>(0, 0).norm();
+    const quat_t quat = quat_t::FromTwoVectors(pos_t::UnitZ(), circle.normal.cast<double>());
+    const auto radius = circle.radius;
 
     /* lines (the circle itself) //{ */
 
@@ -1143,7 +1208,9 @@ namespace balloon_filter
       lines.pose.orientation.x = quat.x();
       lines.pose.orientation.y = quat.y();
       lines.pose.orientation.z = quat.z();
-      lines.pose.position.z = offset;
+      lines.pose.position.x = circle.center.x();
+      lines.pose.position.y = circle.center.y();
+      lines.pose.position.z = circle.center.z();
 
       constexpr int circ_pts_per_meter_radius = 10;
       int circ_pts = std::round(radius * circ_pts_per_meter_radius);
@@ -1153,8 +1220,8 @@ namespace balloon_filter
       {
         const float angle = M_PI / (circ_pts / 2.0f) * it;
         geometry_msgs::Point pt;
-        pt.x = cx + radius * cos(angle);
-        pt.y = cy + radius * sin(angle);
+        pt.x = radius * cos(angle);
+        pt.y = radius * sin(angle);
         pt.z = 0;
         lines.points.push_back(pt);
       }
@@ -1166,8 +1233,7 @@ namespace balloon_filter
     /* radisu text //{ */
 
     {
-      Eigen::Vector3d center = quat * Eigen::Vector3d(cx, cy, 0) + Eigen::Vector3d(0, 0, offset);
-      Eigen::Vector3d edge = center + quat * Eigen::Vector3d(radius, 0, 0);
+      Eigen::Vector3d edge = circle.center + quat * Eigen::Vector3d(radius, 0, 0);
       visualization_msgs::Marker text;
       text.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
       text.header = header;
@@ -1299,8 +1365,6 @@ namespace balloon_filter
       borders_marker.pose.orientation.w = quat.w();
 
       borders_marker.scale.x = 0.1;
-      borders_marker.scale.y = 0.1;
-      borders_marker.scale.z = 0.1;
 
       borders_marker.color.a = 0.5;  // Don't forget to set the alpha!
       borders_marker.color.r = 0.0;
@@ -1551,14 +1615,14 @@ namespace balloon_filter
   //}
 
   /* msg2cov() method //{ */
-  cov_t BalloonFilter::msg2cov(const ros_cov_t& msg_cov)
+  cov_t BalloonFilter::msg2cov(const ros_cov_t& msg_cov, int offset)
   {
     cov_t cov;
     for (int r = 0; r < 3; r++)
     {
       for (int c = 0; c < 3; c++)
       {
-        cov(r, c) = msg_cov[r * 6 + c];
+        cov(r, c) = msg_cov[(r+offset) * 6 + (c+offset)];
       }
     }
     return cov;
@@ -1585,7 +1649,7 @@ namespace balloon_filter
   /* plane_orientation() method //{ */
   quat_t BalloonFilter::plane_orientation(const theta_t& plane_theta)
   {
-    const quat_t ret = mrs_lib::quaternion_between({0, 0, 1}, plane_theta.block<3, 1>(0, 0));
+    const quat_t ret = quat_t::FromTwoVectors(pos_t::UnitZ(), plane_theta.block<3, 1>(0, 0));
     return ret;
   }
   //}
@@ -1670,7 +1734,8 @@ namespace balloon_filter
     m_ukf_init_std(ukf::x::yaw) = cfg.ukf__init_std__yaw;
     /* m_init_std(ukf::x_s) = cfg.init_std__speed; */
     m_ukf_init_std(ukf::x::c) = cfg.ukf__init_std__curvature;
-    m_ukf_meas_std_curv = cfg.ukf__meas_std__curvature;
+    m_ukf_meas_std_curv_circ = cfg.ukf__meas_std__curvature_circ;
+    m_ukf_meas_std_curv_line = cfg.ukf__meas_std__curvature_line;
 
     //}
 
@@ -1732,7 +1797,8 @@ namespace balloon_filter
     pl.load_param("ball_wire_length", m_ball_wire_length);
 
     pl.load_param("circle/max_radius", m_circle_max_radius);
-    pl.load_param("circle/threshold_distance", m_circle_threshold_distance);
+    pl.load_param("circle/fit_threshold_distance", m_circle_fit_threshold_distance);
+    pl.load_param("circle/snap_threshold_distance", m_circle_snap_threshold_distance);
 
     const ros::Duration ball_speed_change_after = pl.load_param2("ball_speed_change_after");
     // TODO: set the time in some smarter manner
@@ -1804,7 +1870,8 @@ namespace balloon_filter
 
     /* publishers //{ */
 
-    m_pub_meas_filt_dbg = nh.advertise<sensor_msgs::PointCloud2>("measurement_filter", 1);
+    m_pub_dbg = nh.advertise<visualization_msgs::MarkerArray>("dbg_marker", 1);
+    m_pub_pcl_dbg = nh.advertise<sensor_msgs::PointCloud2>("dbg_pcl", 1);
     m_pub_chosen_meas = nh.advertise<balloon_filter::BallLocation>("chosen_measurement", 1);
     m_pub_chosen_meas_dbg = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("chosen_measurement_dbg", 1);
 
@@ -1843,7 +1910,7 @@ namespace balloon_filter
         m_lkf_n_states = 6;
       const LKF::A_t A;
       const LKF::B_t B;
-      const LKF::H_t H = LKF::H_t::Identity(lkf::n_measurements, m_lkf_n_states);
+      const LKF::H_t H = LKF::H_t::Identity(3, m_lkf_n_states);
       m_lkf = LKF(A, B, H);
       m_lkf_process_std = Eigen::VectorXd(m_lkf_n_states);
       m_lkf_init_std = Eigen::VectorXd(m_lkf_n_states);

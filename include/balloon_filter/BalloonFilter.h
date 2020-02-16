@@ -40,6 +40,39 @@
 #include <pcl/sample_consensus/sac_model_line.h>
 #include <pcl/sample_consensus/sac_model_circle.h>
 
+#include <pcl/ModelCoefficients.h>
+#include <pcl/common/common.h>
+#include <pcl/common/transforms.h>
+#include <pcl/conversions.h>
+#include <pcl/io/pcd_io.h>
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
+#include <pcl/kdtree/kdtree.h>
+#include <pcl/octree/octree_search.h>
+#include <pcl/registration/transforms.h>
+#include <pcl/segmentation/extract_clusters.h>
+#include <pcl/segmentation/conditional_euclidean_clustering.h>
+#include <pcl_ros/point_cloud.h>
+#include <pcl_ros/transforms.h>
+#include <pcl_conversions/pcl_conversions.h>
+#include <pcl/surface/organized_fast_mesh.h>
+#include <pcl/surface/gp3.h>
+#include <pcl/surface/concave_hull.h>
+
+#include <pcl/filters/voxel_grid.h>
+#include <pcl/filters/crop_box.h>
+#include <pcl/filters/extract_indices.h>
+
+#include <pcl/features/normal_3d_omp.h>
+#include <pcl/features/integral_image_normal.h>
+#include <pcl/features/moment_of_inertia_estimation.h>
+#include <pcl/surface/poisson.h>
+
+#include <pcl/sample_consensus/ransac.h>
+#include <pcl/sample_consensus/lmeds.h>
+#include <pcl/sample_consensus/sac_model_plane.h>
+#include <pcl/sample_consensus/sac_model_line.h>
+
 // Boost
 #include <boost/circular_buffer.hpp>
 
@@ -82,10 +115,22 @@ namespace balloon_filter
   using cov_t = RHEIV::P_t;
   using theta_t = RHEIV::theta_t;
   using quat_t = Eigen::Quaterniond;
+  using anax_t = Eigen::AngleAxisd;
+
   struct pos_cov_t
   {
     pos_t pos;
     cov_t cov;
+  };
+  struct ori_cov_t
+  {
+    quat_t quat;
+    cov_t ypr_cov;
+  };
+  struct pose_cov_t
+  {
+    pos_cov_t pos_cov;
+    std::optional<ori_cov_t> ori_cov = std::nullopt;
   };
 
   using mrs_lib::get_mutexed;
@@ -142,12 +187,14 @@ namespace balloon_filter
 
       double m_circle_min_radius;
       double m_circle_max_radius;
-      double m_circle_threshold_distance;
+      double m_circle_fit_threshold_distance;
+      double m_circle_snap_threshold_distance;
 
       ros::Duration m_ukf_init_history_duration;
       UKF::x_t m_ukf_process_std;
       UKF::x_t m_ukf_init_std;
-      double m_ukf_meas_std_curv;
+      double m_ukf_meas_std_curv_circ;
+      double m_ukf_meas_std_curv_line;
       double m_ukf_prediction_horizon;
       double m_ukf_prediction_step;
 
@@ -181,7 +228,8 @@ namespace balloon_filter
       /* mrs_lib::SubscribeHandlerPtr<detections_t> m_sh_detections_bfx; */
       mrs_lib::SubscribeHandlerPtr<geometry_msgs::PoseWithCovarianceStamped> m_sh_localized;
 
-      ros::Publisher m_pub_meas_filt_dbg;
+      ros::Publisher m_pub_dbg;
+      ros::Publisher m_pub_pcl_dbg;
 
       ros::Publisher m_pub_plane_dbg;
       ros::Publisher m_pub_plane_dbg2;
@@ -240,11 +288,15 @@ namespace balloon_filter
 
       using pt_XYZ_t = pcl::PointXYZ;
       using pc_XYZ_t = pcl::PointCloud<pt_XYZ_t>;
-      using circle_params_t = Eigen::Vector3f;
+      struct circle3d_t
+      {
+        Eigen::Vector3d center;
+        Eigen::Vector3d normal;
+        double radius;
+      };
       std::mutex m_circle_mtx;
       bool m_circle_valid;
-      theta_t m_circle_last_fit_plane;
-      circle_params_t m_circle_last_fit;
+      circle3d_t m_circle;
 
       //}
 
@@ -309,7 +361,7 @@ namespace balloon_filter
 
       template <unsigned num_dimensions>
       double calc_hyp_meas_loglikelihood(const pos_cov_t& hyp, const pos_cov_t& meas, const double cov_inflation);
-      cov_t msg2cov(const ros_cov_t& msg_cov);
+      cov_t msg2cov(const ros_cov_t& msg_cov, int offset = 0);
       cov_t rotate_covariance(const cov_t& covariance, const cov_t& rotation);
       bool point_valid(const pos_t& pt);
       quat_t plane_orientation(const theta_t& plane_theta);
@@ -329,8 +381,8 @@ namespace balloon_filter
 
       /* UKF related methods //{ */
       UKF::statecov_t predict_ukf_estimate(const UKF::statecov_t& lkf_estimate, const double dt, const theta_t& plane_theta, const double ball_speed);
-      void update_ukf_estimate(const pos_cov_t& measurement, const ros::Time& stamp, const theta_t& plane_theta);
-      void update_ukf_estimate(const theta_t& circle_plane, const circle_params_t& circle_params);
+      void update_ukf_estimate(const pose_cov_t& measurement, const ros::Time& stamp, const theta_t& plane_theta);
+      void update_ukf_estimate(const circle3d_t& circle, const theta_t& rheiv_plane);
       std::optional<UKF::statecov_t> estimate_ukf_initial_state(const theta_t& plane_theta);
       void init_ukf_estimate(const ros::Time& stamp, const theta_t& plane_theta);
       std::vector<std::pair<UKF::x_t, ros::Time>> predict_ukf_states(const UKF::statecov_t initial_statecov, const ros::Time& initial_timestamp, const theta_t& plane_theta, const double prediction_horizon, const double prediction_step);
@@ -339,7 +391,7 @@ namespace balloon_filter
 
       /* LKF related methods //{ */
       LKF::statecov_t predict_lkf_estimate(const LKF::statecov_t& lkf_estimate, const double dt);
-      void update_lkf_estimate(const pos_cov_t& measurement, const ros::Time& stamp);
+      void update_lkf_estimate(const pose_cov_t& measurement, const ros::Time& stamp);
       std::optional<LKF::statecov_t> estimate_lkf_initial_state();
       void init_lkf_estimate(const ros::Time& stamp);
       std::vector<std::pair<LKF::x_t, ros::Time>> predict_lkf_states(const LKF::statecov_t initial_statecov, const ros::Time& initial_timestamp, const double prediction_horizon, const double prediction_step, const double set_speed);
@@ -368,7 +420,7 @@ namespace balloon_filter
       balloon_filter::LKFState to_output_message(const LKF::statecov_t& lkf_statecov);
       balloon_filter::UKFState to_output_message(const UKF::statecov_t& ukf_statecov);
       balloon_filter::Plane to_output_message(const rheiv::theta_t& plane_theta);
-      visualization_msgs::MarkerArray circle_visualization(const float cx, const float cy, const float radius, const theta_t& plane_theta, const std_msgs::Header& header);
+      visualization_msgs::MarkerArray circle_visualization(const circle3d_t& circle, const std_msgs::Header& header);
 
       pos_t get_cur_mav_pos();
 

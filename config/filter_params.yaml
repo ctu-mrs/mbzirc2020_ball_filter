@@ -11,13 +11,8 @@ ball_speed_change_after: 480.0 # seconds (480s is 8min)
 circle:
   min_radius: 2.5 # fitted (RANSAC) or estimated (UKF) circles with radius smaller than this will be discarded
   max_radius: 28  # fitted circles with radius larger than this will be discarded
-  threshold_distance: 2.5 # point must lie within this distance from the circle to be considered inlier
-
-# meas_filt:
-#   desired_dt: 0.5 # seconds
-#   buffer_length: 10
-#   covariance_inflation: 1.0 # how much to inflate the measurement covariance when choosing measurements
-#   loglikelihood_threshold: -100.0
+  fit_threshold_distance: 1.0 # point must lie within this distance from the circle to be considered inlier during fitting
+  snap_threshold_distance: 1.2 # point must lie within this distance from the circle to be considered inlier during curvature snapping
 
 lkf:
   use_acceleration: true # whether to include acceleration in the system model
@@ -42,7 +37,8 @@ ukf:
   init_history_duration: 20.0 # seconds
 
   meas_std:
-    curvature: 0.001
+    curvature_circ: 0.01
+    curvature_line: 0.1
 
   process_std:
     position: 0.1
