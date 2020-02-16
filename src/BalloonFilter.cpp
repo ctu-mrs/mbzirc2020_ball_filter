@@ -613,7 +613,8 @@ namespace balloon_filter
     const UKF::u_t u = construct_u(plane_theta, ball_speed);
     {
       std::scoped_lock lck(m_ukf_mtx);
-      const auto ret = m_ukf.predict(ukf_estimate, u, Q, dt);
+      auto ret = m_ukf.predict(ukf_estimate, u, Q, dt);
+      ret.x(ukf::x::yaw) = mrs_lib::normalize_angle(ret.x(ukf::x::yaw), -M_PI, M_PI);
       return ret;
     }
   }
@@ -643,7 +644,6 @@ namespace balloon_filter
       const pos_t xvec2d = rot_world_to_plane*xvec3d;
       // get the yaw of the velocity vector in the plane coordinates
       yaw_opt = std::atan2(xvec2d.y(), xvec2d.x());
-      std::cout << "MEASURED YAW: " << yaw_opt.value() << std::endl;
     }
 
     {
@@ -652,17 +652,17 @@ namespace balloon_filter
       {
         const double yaw = yaw_opt.value();
         const double est_yaw = ukf_estimate.x(ukf::x::yaw);
-        const double yaw_diff = mrs_lib::normalize_angle(est_yaw - yaw, -M_PI, M_PI);
-        const double n_yaw = est_yaw - yaw_diff;
+        const double yaw_diff = mrs_lib::normalize_angle(yaw - est_yaw, -M_PI, M_PI);
+        const double n_yaw = est_yaw + yaw_diff;
         UKF::z_t z(4);
         z << pos.x(), pos.y(), pos.z(), n_yaw;
         UKF::R_t R = UKF::R_t::Zero(4, 4);
         R.block<3, 3>(0, 0) = measurement.pos_cov.cov;
         R(3, 3) = measurement.ori_cov.value().ypr_cov(0, 0);
-        std::cout << "R(3,3): " << R(3, 3) << std::endl;
 
         m_ukf.setObservationModel(ukf::obs_model_f_pose);
         ukf_estimate = m_ukf.correct(ukf_estimate, z, R);
+        ukf_estimate.x(ukf::x::yaw) = mrs_lib::normalize_angle(ukf_estimate.x(ukf::x::yaw), -M_PI, M_PI);
         ROS_INFO_THROTTLE(0, "[UKF]: Updating current estimate using point [%.2f, %.2f, %.2f] and yaw %.2f", pos.x(), pos.y(),
                           pos.z(), n_yaw);
       }
@@ -673,6 +673,7 @@ namespace balloon_filter
 
         m_ukf.setObservationModel(ukf::obs_model_f_pos);
         ukf_estimate = m_ukf.correct(ukf_estimate, z, R);
+        ukf_estimate.x(ukf::x::yaw) = mrs_lib::normalize_angle(ukf_estimate.x(ukf::x::yaw), -M_PI, M_PI);
         ROS_INFO_THROTTLE(0, "[UKF]: Updating current estimate using point [%.2f, %.2f, %.2f]", pos.x(), pos.y(),
                           pos.z());
       }
@@ -790,6 +791,7 @@ namespace balloon_filter
     /*   std::scoped_lock lck(m_ukf_mtx); */
     /*   m_ukf.setObservationModel(ukf::obs_model_f_curv); */
     /*   ukf_estimate = m_ukf.correct(ukf_estimate, z, R); */
+    /*   ukf_estimate.x(ukf::x::yaw) = ukf_estimate.x(ukf::x::yaw); */
     /* } */
 
     set_mutexed(m_ukf_estimate_mtx, std::make_tuple(ukf_estimate),
@@ -867,6 +869,7 @@ namespace balloon_filter
           std::scoped_lock lck(m_ukf_mtx);
           m_ukf.setObservationModel(ukf::obs_model_f_pos);
           statecov = m_ukf.correct(statecov, cur_pt, cur_cov);
+          statecov.x(ukf::x::yaw) = mrs_lib::normalize_angle(statecov.x(ukf::x::yaw), -M_PI, M_PI);
         }
         prev_stamp = cur_stamp;
       }
