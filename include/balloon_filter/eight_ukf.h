@@ -56,6 +56,8 @@ namespace balloon_filter
     UKF::x_t tra_model_f(const UKF::x_t& x, [[maybe_unused]] const UKF::u_t& u, const double dt);
 
     // This function implements the observation generation from a state
-    UKF::z_t obs_model_f(const UKF::x_t& x);
+    UKF::z_t obs_model_f_pos(const UKF::x_t& x);
+    UKF::z_t obs_model_f_pose(const UKF::x_t& x);
+    UKF::z_t obs_model_f_curv(const UKF::x_t& x);
   }
 }

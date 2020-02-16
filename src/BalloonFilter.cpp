@@ -400,7 +400,7 @@ namespace balloon_filter
       const auto [circle_valid, circle_plane_theta, circle_params] = get_mutexed(m_circle_mtx, m_circle_valid, m_circle_last_fit_plane, m_circle_last_fit);
       // if we have a fitted circle, use it to correct the UKF estimated curvature
       if (circle_valid)
-        correct_ukf_estimate(circle_plane_theta, circle_params);
+        update_ukf_estimate(circle_plane_theta, circle_params);
 
     } else
     {
@@ -587,8 +587,11 @@ namespace balloon_filter
   {
     const UKF::Q_t Q = dt * m_ukf_process_std.asDiagonal();
     const UKF::u_t u = construct_u(plane_theta, ball_speed);
-    const auto ret = m_ukf.predict(ukf_estimate, u, Q, dt);
-    return ret;
+    {
+      std::scoped_lock lck(m_ukf_mtx);
+      const auto ret = m_ukf.predict(ukf_estimate, u, Q, dt);
+      return ret;
+    }
   }
   //}
 
@@ -605,7 +608,10 @@ namespace balloon_filter
       return;
 
     ukf_estimate = predict_ukf_estimate(ukf_estimate, dt, plane_theta, ball_speed_at_time(ukf_last_update));
-    ukf_estimate = m_ukf.correct(ukf_estimate, measurement.pos, measurement.cov);
+    {
+      std::scoped_lock lck(m_ukf_mtx);
+      ukf_estimate = m_ukf.correct(ukf_estimate, measurement.pos, measurement.cov);
+    }
     ukf_last_update = stamp;
     ukf_n_updates++;
     ukf_estimate_exists = true;
@@ -615,8 +621,9 @@ namespace balloon_filter
   }
   //}
 
-  /* correct_ukf_estimate() method //{ */
-  void BalloonFilter::correct_ukf_estimate(const theta_t& circle_plane, const circle_params_t& circle_params)
+  /* update_ukf_estimate() method //{ */
+  // This function doesn't increase the counters or stamps of the UKF!
+  void BalloonFilter::update_ukf_estimate(const theta_t& circle_plane, const circle_params_t& circle_params)
   {
     auto ukf_estimate =
         mrs_lib::get_mutexed(m_ukf_estimate_mtx, m_ukf_estimate);
@@ -629,24 +636,35 @@ namespace balloon_filter
     const pos_t pos2d = plane_orientation(circle_plane).inverse()*cur_pos;
     const pos_t rel_pos = pos2d - pos_t(cx, cy, pos2d.z());
     const double circ_dist = std::abs(rel_pos.norm() - radius);
+    double curv;
     // check if point lies on the circle
     if (circ_dist < m_circle_threshold_distance)
     {
       // find the correct sign of the curvature
       const double pol_ang = std::atan2(rel_pos.y(), rel_pos.x());
       const double norm_yaw = ukf_estimate.x(ukf::x::yaw) - pol_ang;
-      double curv = 1.0/radius;
+      curv = 1.0/radius;
       if (norm_yaw < 0.0)
         curv = -curv;
-      ukf_estimate.x(ukf::x::c) = curv;
-      ROS_INFO_THROTTLE(MSG_THROTTLE, "[UKF]: Correcting current estimate using circle radius %.2fm to curvature %.2f", circle_params(2), curv);
+      ROS_INFO_THROTTLE(MSG_THROTTLE, "[UKF]: Updating current estimate using circle radius %.2fm to curvature %.2f", circle_params(2), curv);
     }
     else
     {
       // if the point does not lie on the circle, assume it's on the line
       // and set the curvature accordingly
-      ukf_estimate.x(ukf::x::c) = 0.0;
-      ROS_INFO_THROTTLE(MSG_THROTTLE, "[UKF]: Correcting current estimate using line");
+      curv = 0.0;
+      ROS_INFO_THROTTLE(MSG_THROTTLE, "[UKF]: Updating current estimate using line");
+    }
+
+    UKF::z_t z(1);
+    z(0) = curv;
+    UKF::R_t R(1, 1);
+    R << m_ukf_meas_std_curv;
+    {
+      std::scoped_lock lck(m_ukf_mtx);
+      m_ukf.setObservationModel(ukf::obs_model_f_curv);
+      m_ukf.correct(ukf_estimate, z, R);
+      m_ukf.setObservationModel(ukf::obs_model_f_pos);
     }
 
     set_mutexed(m_ukf_estimate_mtx, std::make_tuple(ukf_estimate),
@@ -720,7 +738,10 @@ namespace balloon_filter
           continue;
 
         statecov = predict_ukf_estimate(statecov, dt, plane_theta, ball_speed_at_time(prev_stamp));
-        statecov = m_ukf.correct(statecov, cur_pt, cur_cov);
+        {
+          std::scoped_lock lck(m_ukf_mtx);
+          statecov = m_ukf.correct(statecov, cur_pt, cur_cov);
+        }
         prev_stamp = cur_stamp;
       }
     }
@@ -1104,9 +1125,11 @@ namespace balloon_filter
   {
     visualization_msgs::MarkerArray ret;
     const quat_t quat = plane_orientation(plane_theta);
-    const double offset = plane_theta(3) / plane_theta.block<3, 1>(0, 0).norm();
+    using anax_t = Eigen::AngleAxisd;
+    const double plane_sign = anax_t(quat_t::FromTwoVectors(pos_t::UnitZ(), quat*pos_t::UnitZ())).angle() < M_PI_2 ? -1.0 : 1.0;
+    const double offset = plane_sign * plane_theta(3) / plane_theta.block<3, 1>(0, 0).norm();
 
-    /* lines (the circle itself //{ */
+    /* lines (the circle itself) //{ */
 
     {
       visualization_msgs::Marker lines;
@@ -1123,8 +1146,10 @@ namespace balloon_filter
       lines.pose.position.z = offset;
 
       constexpr int circ_pts_per_meter_radius = 10;
-      const int circ_pts = radius * circ_pts_per_meter_radius;
-      for (int it = 0; it < circ_pts + 1; it++)
+      int circ_pts = std::round(radius * circ_pts_per_meter_radius);
+      if (circ_pts % 2)
+        circ_pts++;
+      for (int it = 0; it < circ_pts; it++)
       {
         const float angle = M_PI / (circ_pts / 2.0f) * it;
         geometry_msgs::Point pt;
@@ -1645,6 +1670,7 @@ namespace balloon_filter
     m_ukf_init_std(ukf::x::yaw) = cfg.ukf__init_std__yaw;
     /* m_init_std(ukf::x_s) = cfg.init_std__speed; */
     m_ukf_init_std(ukf::x::c) = cfg.ukf__init_std__curvature;
+    m_ukf_meas_std_curv = cfg.ukf__meas_std__curvature;
 
     //}
 
@@ -1803,8 +1829,8 @@ namespace balloon_filter
     {
 
       UKF::transition_model_t tra_model(ukf::tra_model_f);
-      UKF::observation_model_t obs_model(ukf::obs_model_f);
-      m_ukf = UKF(ukf::tra_model_f, ukf::obs_model_f);
+      UKF::observation_model_t obs_model(ukf::obs_model_f_pos);
+      m_ukf = UKF(ukf::tra_model_f, ukf::obs_model_f_pos);
     }
     //}
 

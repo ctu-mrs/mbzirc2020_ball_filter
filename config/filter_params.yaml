@@ -11,7 +11,7 @@ ball_speed_change_after: 480.0 # seconds (480s is 8min)
 circle:
   min_radius: 2.5 # fitted (RANSAC) or estimated (UKF) circles with radius smaller than this will be discarded
   max_radius: 28  # fitted circles with radius larger than this will be discarded
-  threshold_distance: 1.5 # point must lie within this distance from the circle to be considered inlier
+  threshold_distance: 2.5 # point must lie within this distance from the circle to be considered inlier
 
 # meas_filt:
 #   desired_dt: 0.5 # seconds
@@ -40,6 +40,9 @@ ukf:
   prediction_horizon: 4.0 # seconds
   prediction_step: 0.4 # seconds
   init_history_duration: 20.0 # seconds
+
+  meas_std:
+    curvature: 0.001
 
   process_std:
     position: 0.1
