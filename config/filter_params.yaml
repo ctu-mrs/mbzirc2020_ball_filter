@@ -1,6 +1,6 @@
-processing_period: 0.01 # seconds
+processing_period: 0.05 # seconds
 prediction_period: 0.05 # seconds
-max_time_since_update: 20.0 # seconds
+max_time_since_update: 666.0 # seconds
 min_updates_to_confirm: 8
 
 ball_wire_length: 1.45 # metres
@@ -8,49 +8,43 @@ ball_speed1: 3.0 # metres per second
 ball_speed2: 3.0 # metres per second
 ball_speed_change_after: 480.0 # seconds (480s is 8min)
 
-meas_filt:
-  desired_dt: 0.5 # seconds
-  buffer_length: 10
-  covariance_inflation: 1.0 # how much to inflate the measurement covariance when choosing measurements
-  loglikelihood_threshold: -100.0
+# meas_filt:
+#   desired_dt: 0.5 # seconds
+#   buffer_length: 10
+#   covariance_inflation: 1.0 # how much to inflate the measurement covariance when choosing measurements
+#   loglikelihood_threshold: -100.0
 
 lkf:
   use_acceleration: true # whether to include acceleration in the system model
-  min_init_points: 10
+  min_init_points: 5
   max_speed_err: 3.5 # metre per second
-  prediction_horizon: 2.0 # seconds
-  prediction_step: 0.5 # seconds
+  prediction_horizon: 4.0 # seconds
+  prediction_step: 0.4 # seconds
+  init_history_duration: 20.0 # seconds
+
+  process_std:
+    position: 0.05
+    velocity: 0.01
+    acceleration: 0.5
+
+  init_std:
+    velocity: 0.5
+    acceleration: 0.5
+
+ukf:
+  min_radius: 1.5 # for estimated abs. curvatures larger than this, the UKF will be reset to sanitize the output
+  prediction_horizon: 4.0 # seconds
+  prediction_step: 0.4 # seconds
   init_history_duration: 20.0 # seconds
 
   process_std:
     position: 0.1
-    velocity: 0.05
-    acceleration: 1.0
-
-  init_std:
-    velocity: 1.0
-    acceleration: 1.0
-
-ukf:
-  min_radius: 1.5 # for estimated abs. curvatures larger than this, the UKF will be reset to sanitize the output
-  prediction_horizon: 10.0 # seconds
-  prediction_step: 0.5 # seconds
-  init_history_duration: 20.0 # seconds
-
-  process_std:
-    position: 5.0
-    yaw: 0.1
+    yaw: 0.05
     curvature: 0.01
 
   init_std:
     yaw: 2.0
-    speed: 1.0
     curvature: 2.0
-
-lpf:
-  rate: 25 # hertz
-  cutoff_freq:
-    curvature: 0.5 # hertz
 
 bounds: # measurements outside these bounds will be ignored
   z:
@@ -58,8 +52,9 @@ bounds: # measurements outside these bounds will be ignored
     max: 15 # metres
 
 rheiv:
-  fitting_period: 1.0 # seconds
-  min_points: 9999999
-  max_points: 9999999
+  fitting_period: 0.5 # seconds
+  max_line_points_ratio: 0.5
+  min_points: 10
+  max_points: 200
   visualization_size: 20 # metres
-  timeout: 3.0 # seconds
+  timeout: 1.0 # seconds

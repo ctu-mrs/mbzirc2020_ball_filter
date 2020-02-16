@@ -35,6 +35,10 @@
 #include <mrs_lib/SafetyZone/SafetyZone.h>
 #include <mrs_lib/transformer.h>
 
+// PCL
+#include <pcl/sample_consensus/ransac.h>
+#include <pcl/sample_consensus/sac_model_line.h>
+
 // Boost
 #include <boost/circular_buffer.hpp>
 
@@ -54,8 +58,6 @@
 #include <balloon_filter/BallPrediction.h>
 #include <balloon_filter/PlaneStamped.h>
 #include <balloon_filter/BallLocation.h>
-#include <object_detect/BallDetections.h>
-#include <depth_detect/Detections.h>
 
 //}
 
@@ -67,12 +69,9 @@ namespace balloon_filter
   using drcfg_t = balloon_filter::FilterParamsConfig;
   using drmgr_t = mrs_lib::DynamicReconfigureMgr<drcfg_t>;
 
-  using detections_t = object_detect::BallDetections;
-  using ros_poses_t = detections_t::_detections_type;
-  using ros_pose_t = ros_poses_t::value_type::_pose_type::_pose_type;
-  using ros_cov_t = ros_poses_t::value_type::_pose_type::_covariance_type;
-
-  using depth_detections_t = depth_detect::Detections;
+  using detection_t = geometry_msgs::PoseWithCovarianceStamped;
+  using ros_pose_t = detection_t ::_pose_type::_pose_type;
+  using ros_cov_t = detection_t::_pose_type::_covariance_type;
 
   using RHEIV = rheiv::RHEIV;
   /* using RHEIV_conic = rheiv_conic::RHEIV_conic; */
@@ -128,6 +127,7 @@ namespace balloon_filter
       std::string m_safety_area_frame;
 
       double m_rheiv_fitting_period;
+      double m_rheiv_max_line_pts_ratio;
       int m_rheiv_min_pts;
       int m_rheiv_max_pts;
       int m_rheiv_visualization_size;
@@ -268,10 +268,10 @@ namespace balloon_filter
 
       // | --------------------- Other variables -------------------- |
 
-      ros::Duration m_meas_filt_desired_dt;
-      using prev_measurement_t = std::tuple<std::vector<pos_cov_t>, ros::Time>;
-      using prev_measurements_t = boost::circular_buffer<prev_measurement_t>;
-      prev_measurements_t m_prev_measurements;
+      /* ros::Duration m_meas_filt_desired_dt; */
+      /* using prev_measurement_t = std::tuple<std::vector<pos_cov_t>, ros::Time>; */
+      /* using prev_measurements_t = boost::circular_buffer<prev_measurement_t>; */
+      /* prev_measurements_t m_prev_measurements; */
       std::shared_ptr<mrs_lib::SafetyZone> m_safety_area;
 
     private:
@@ -309,8 +309,6 @@ namespace balloon_filter
       double ball_speed_at_time(const ros::Time& timestamp);
       std::tuple<pos_cov_t, double> find_most_likely_association(const pos_cov_t& prev_pt, const std::vector<pos_cov_t>& measurements, const double expected_speed, const double dt, const double cov_inflation);
       std::optional<std::pair<pos_cov_t, pos_cov_t>> find_speed_compliant_measurement(const std::vector<pos_cov_t>& prev_meass, const std::vector<pos_cov_t>& measurements, const double expected_speed, const double dt, const double loglikelihood_threshold, const double cov_inflation);
-
-      prev_measurement_t find_closest_dt(const prev_measurements_t& measurements, const ros::Time& from_time, const ros::Duration& desired_dt);
 
       /* RHEIV related methods //{ */
       
@@ -362,11 +360,6 @@ namespace balloon_filter
       balloon_filter::Plane to_output_message(const rheiv::theta_t& plane_theta);
 
       pos_t get_cur_mav_pos();
-      /* bool find_closest_to(const std::vector<pos_cov_t>& measurements, const pos_t& to_position, pos_cov_t& closest_out, bool use_gating = false); */
-      /* bool find_closest(const std::vector<pos_cov_t>& measurements, pos_cov_t& closest_out); */
-
-      std::vector<pos_cov_t> message_to_positions(const detections_t& det_msg);
-      std::vector<pos_cov_t> message_to_positions(const depth_detections_t& det_msg);
 
       void reset_estimates();
       bool reset_estimates_callback([[maybe_unused]] balloon_filter::ResetEstimates::Request& req, balloon_filter::ResetEstimates::Response& resp);

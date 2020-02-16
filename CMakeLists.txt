@@ -18,13 +18,14 @@ find_package(catkin REQUIRED COMPONENTS
   mrs_lib
   pcl_ros
   message_generation
-  object_detect
   uav_detect
-  uav_localize
+  pcl_ros
   )
 
 # include Eigen3
 find_package(Eigen3 REQUIRED)
+
+find_package(PCL REQUIRED COMPONENTS)
 
 generate_dynamic_reconfigure_options(
   config/FilterParams.cfg
@@ -75,6 +76,17 @@ include_directories(
   include
   ${catkin_INCLUDE_DIRS}
   ${Eigen_INCLUDE_DIRS}
+  ${PCL_INCLUDE_DIRS}
+  )
+
+## Add link directories
+link_directories(
+  ${PCL_LIBRARY_DIRS}
+)
+
+# This causes adds the -march=native gcc flag that prevents ditributed compilation
+add_definitions(
+  ${PCL_DEFINITIONS}
   )
 
 ## Declare a C++ executable
@@ -93,31 +105,31 @@ target_link_libraries(BalloonFilter
   ${catkin_LIBRARIES}
   )
 
-## Declare a C++ executable
-add_executable(eight_ukf
-  src/eight_ukf.cpp
-  )
-add_dependencies(eight_ukf
-  ${${PROJECT_NAME}_EXPORTED_TARGETS}
-  ${catkin_EXPORTED_TARGETS})
-## Specify libraries to link a library or executable target against
-target_link_libraries(eight_ukf
-  ${catkin_LIBRARIES}
-  )
-target_compile_options(eight_ukf PRIVATE "-DCOMPILE_EIGHT_UKF_TEST")
+# ## Declare a C++ executable
+# add_executable(eight_ukf
+#   src/eight_ukf.cpp
+#   )
+# add_dependencies(eight_ukf
+#   ${${PROJECT_NAME}_EXPORTED_TARGETS}
+#   ${catkin_EXPORTED_TARGETS})
+# ## Specify libraries to link a library or executable target against
+# target_link_libraries(eight_ukf
+#   ${catkin_LIBRARIES}
+#   )
+# target_compile_options(eight_ukf PRIVATE "-DCOMPILE_EIGHT_UKF_TEST")
 
-## Declare a C++ executable
-add_executable(plane_rheiv
-  src/plane_rheiv.cpp
-  )
-add_dependencies(plane_rheiv
-  ${${PROJECT_NAME}_EXPORTED_TARGETS}
-  ${catkin_EXPORTED_TARGETS})
-## Specify libraries to link a library or executable target against
-target_link_libraries(plane_rheiv
-  ${catkin_LIBRARIES}
-  )
-target_compile_options(plane_rheiv PRIVATE "-DCOMPILE_PLANE_RHEIV_TEST")
+# ## Declare a C++ executable
+# add_executable(plane_rheiv
+#   src/plane_rheiv.cpp
+#   )
+# add_dependencies(plane_rheiv
+#   ${${PROJECT_NAME}_EXPORTED_TARGETS}
+#   ${catkin_EXPORTED_TARGETS})
+# ## Specify libraries to link a library or executable target against
+# target_link_libraries(plane_rheiv
+#   ${catkin_LIBRARIES}
+#   )
+# target_compile_options(plane_rheiv PRIVATE "-DCOMPILE_PLANE_RHEIV_TEST")
 
 # ## Declare a C++ executable
 # add_executable(conic_rheiv

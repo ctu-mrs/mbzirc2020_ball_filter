@@ -117,42 +117,81 @@ namespace balloon_filter
     if (rheiv_pts.size() > (size_t)m_rheiv_min_pts)
     {
       ros::Time fit_time_start = ros::Time::now();
-      // Fitting might throw an exception, so we better try/catch it!
-      try
+      bool well_conditioned = false;
+      // First try to fit a line and check how many points are left.
+      // This is to make sure that the point set is well conditioned for plane fitting.
+      /*  //{ */
+      
       {
-        theta = fit_plane(rheiv_pts, rheiv_covs);
-        if (abs(plane_angle(-theta, m_rheiv_theta)) < abs(plane_angle(theta, m_rheiv_theta)))
-          theta = -theta;
-        double angle_diff = plane_angle(theta, m_rheiv_theta);
-
+        using pt_XYZ_t = pcl::PointXYZ;
+        using pc_XYZ_t = pcl::PointCloud<pt_XYZ_t>;
+        pc_XYZ_t::Ptr line_pts = boost::make_shared<pc_XYZ_t>();
+        line_pts->reserve(rheiv_pts.size());
+        for (const auto& pt : rheiv_pts)
         {
-          std::scoped_lock lck(m_rheiv_data_mtx);
-          // check if the fitting was not reset in the meantime
-          if (m_rheiv_fitting)
-          {
-            // If everything went well, save the results and print a nice message
-            success = true;
-            stamp = ros::Time::now();
-            {
-              std::scoped_lock lck(m_rheiv_theta_mtx);
-              m_rheiv_theta_valid = true;
-              m_rheiv_theta = theta;
-            }
-            ROS_INFO_STREAM_THROTTLE(MSG_THROTTLE, "[RHEIV]: Fitted new plane estimate to " << rheiv_pts.size() << " points in " << (stamp - fit_time_start).toSec()
-                                                                                            << "s (angle diff: " << angle_diff << "):" << std::endl
-                                                                                            << "[" << theta.transpose() << "]");
-          }
-          // reset the fitting flag
-          m_rheiv_fitting = false;
+          pt_XYZ_t pclpt(pt.x(), pt.y(), pt.z());
+          line_pts->push_back(pclpt);
         }
+      
+        auto model_l = boost::make_shared<pcl::SampleConsensusModelLine<pt_XYZ_t>>(line_pts);
+        pcl::RandomSampleConsensus<pt_XYZ_t> fitter(model_l);
+        fitter.setDistanceThreshold(2.0);
+        fitter.computeModel();
+        Eigen::VectorXf params;
+        fitter.getModelCoefficients(params);
+        std::vector<int> inliers;
+        fitter.getInliers(inliers);
+      
+        const double line_pts_ratio = inliers.size()/double(rheiv_pts.size());
+        well_conditioned = line_pts_ratio < m_rheiv_max_line_pts_ratio;
+        if (well_conditioned)
+          ROS_INFO_THROTTLE(MSG_THROTTLE, "[RHEIV]: Point set is well conditioned (ratio of line points is %.2f < %.2f), fitting plane.", line_pts_ratio, m_rheiv_max_line_pts_ratio);
+        else
+          ROS_WARN_THROTTLE(MSG_THROTTLE, "[RHEIV]: Point set is NOT well conditioned (ratio of line points is %.2f < %.2f), NOT fitting plane.", line_pts_ratio, m_rheiv_max_line_pts_ratio);
       }
-      catch (const mrs_lib::eigenvector_exception& ex)
+      
+      //}
+
+      // only continue if the point set is well conditioned for plane fitting
+      if (well_conditioned)
       {
-        // Fitting threw exception, notify the user.
-        stamp = ros::Time::now();
-        ROS_WARN_STREAM_THROTTLE(MSG_THROTTLE, "[RHEIV]: Could not fit plane: '" << ex.what() << "' (took " << (stamp - fit_time_start).toSec() << "s).");
-      }
-    } else
+        // Fitting might throw an exception, so we better try/catch it!
+        try
+        {
+          theta = fit_plane(rheiv_pts, rheiv_covs);
+          if (abs(plane_angle(-theta, m_rheiv_theta)) < abs(plane_angle(theta, m_rheiv_theta)))
+            theta = -theta;
+          double angle_diff = plane_angle(theta, m_rheiv_theta);
+
+          {
+            std::scoped_lock lck(m_rheiv_data_mtx);
+            // check if the fitting was not reset in the meantime
+            if (m_rheiv_fitting)
+            {
+              // If everything went well, save the results and print a nice message
+              success = true;
+              stamp = ros::Time::now();
+              {
+                std::scoped_lock lck(m_rheiv_theta_mtx);
+                m_rheiv_theta_valid = true;
+                m_rheiv_theta = theta;
+              }
+              ROS_INFO_STREAM_THROTTLE(MSG_THROTTLE, "[RHEIV]: Fitted new plane estimate to " << rheiv_pts.size() << " points in " << (stamp - fit_time_start).toSec()
+                                                                                              << "s (angle diff: " << angle_diff << "):" << std::endl
+                                                                                              << "[" << theta.transpose() << "]");
+            }
+            // reset the fitting flag
+            m_rheiv_fitting = false;
+          }
+        } // try
+        catch (const mrs_lib::eigenvector_exception& ex)
+        {
+          // Fitting threw exception, notify the user.
+          stamp = ros::Time::now();
+          ROS_WARN_STREAM_THROTTLE(MSG_THROTTLE, "[RHEIV]: Could not fit plane: '" << ex.what() << "' (took " << (stamp - fit_time_start).toSec() << "s).");
+        }
+      } // if (well_conditioned)
+    } else // if (rheiv_pts.size() > (size_t)m_rheiv_min_pts)
     {
       // Still waiting for enough points to fit the plane through.
       ROS_WARN_STREAM_THROTTLE(MSG_THROTTLE, "[RHEIV]: Not enough points to fit plane (" << rheiv_pts.size() << "/ " << m_rheiv_min_pts << ").");
@@ -295,20 +334,7 @@ namespace balloon_filter
       else
       {
         init_ukf_estimate(msg.header.stamp, plane_theta);
-        lpf_reset(m_ukf_estimate.x, msg.header.stamp);
       }
-  
-      /* publish the filtered curvature //{ */
-  
-      {
-        const auto filtered = lpf_filter_states(m_ukf_estimate.x, msg.header.stamp);
-        mrs_msgs::Float64Stamped msg;
-        msg.header = msg.header;
-        msg.value = filtered;
-        m_pub_lpf.publish(msg);
-      }
-  
-      //}
   
       //}
     } else
@@ -865,59 +891,8 @@ namespace balloon_filter
   //}
 
   // --------------------------------------------------------------
-  // |                     LPF related methods                    |
-  // --------------------------------------------------------------
-
-  /* filter_states() method //{ */
-  double BalloonFilter::lpf_filter_states(const UKF::x_t& ukf_states, const ros::Time& stamp)
-  {
-    const double dt = (stamp - m_lpf_last_update).toSec();
-    const double omega = M_PI_2*dt*m_lpf_cutoff_freq;
-    const double c = std::cos(omega);
-    const double alpha = c - 1.0 + std::sqrt(c*c - 4.0*c + 3.0);
-
-    const double curv_curr = ukf_states(ukf::x::c);
-    m_curv_filt = (1.0-alpha)*m_curv_filt + alpha*curv_curr;
-    ROS_INFO_THROTTLE(1.0, "[LPF]: Using cutoff frequency of %.2fHz for curvature, resulting in %.2f normalized frequency, %.2f its cosine and %.2f alpha.\ncurv_curr: %.2f\ncurv_filt: %.2f", m_lpf_cutoff_freq, omega, c, alpha, curv_curr, m_curv_filt);
-    m_lpf_last_update = stamp;
-
-    return m_curv_filt;
-  }
-  //}
-
-  /* lpf_reset() method //{ */
-  void BalloonFilter::lpf_reset(const UKF::x_t& ukf_states, const ros::Time& stamp)
-  {
-    const double curv_curr = ukf_states(ukf::x::c);
-    m_curv_filt = curv_curr;
-    m_lpf_last_update = stamp;
-  }
-  //}
-
-  // --------------------------------------------------------------
   // |                       Helper methods                       |
   // --------------------------------------------------------------
-
-  /* find_closest_dt() method //{ */
-  BalloonFilter::prev_measurement_t BalloonFilter::find_closest_dt(const prev_measurements_t& measurements, const ros::Time& from_time, const ros::Duration& desired_dt)
-  {
-    assert(!measurements.empty());
-    double closest_dt_diff = std::numeric_limits<double>::max();
-    prev_measurement_t closest_meas;
-    for (const auto& meas : measurements)
-    {
-      const ros::Time cur_stamp = std::get<1>(meas);
-      const ros::Duration cur_dt = from_time - cur_stamp;
-      const double cur_dt_diff = (desired_dt - cur_dt).toSec();
-      if (cur_dt_diff < closest_dt_diff)
-      {
-        closest_dt_diff = cur_dt_diff;
-        closest_meas = meas;
-      }
-    }
-    return closest_meas;
-  }
-  //}
 
   /* reset_estimates() method //{ */
   void BalloonFilter::reset_estimates()
@@ -1399,46 +1374,6 @@ namespace balloon_filter
   }
   //}
 
-  /* /1* find_closest_to() method //{ *1/ */
-  /* bool BalloonFilter::find_closest_to(const std::vector<pos_cov_t>& measurements, const pos_t& to_position, pos_cov_t& closest_out, bool use_gating) */
-  /* { */
-  /*   double min_dist = std::numeric_limits<double>::infinity(); */
-  /*   pos_cov_t closest_pt{std::numeric_limits<double>::quiet_NaN() * pos_t::Ones(), std::numeric_limits<double>::quiet_NaN() * cov_t::Ones()}; */
-  /*   for (const auto& pt : measurements) */
-  /*   { */
-  /*     const double cur_dist = (to_position - pt.pos).norm(); */
-  /*     if (cur_dist < min_dist) */
-  /*     { */
-  /*       min_dist = cur_dist; */
-  /*       closest_pt = pt; */
-  /*     } */
-  /*   } */
-  /*   if (use_gating) */
-  /*   { */
-  /*     if (min_dist < m_gating_distance) */
-  /*     { */
-  /*       closest_out = closest_pt; */
-  /*       return true; */
-  /*     } else */
-  /*     { */
-  /*       return false; */
-  /*     } */
-  /*   } else */
-  /*   { */
-  /*     closest_out = closest_pt; */
-  /*     return true; */
-  /*   } */
-  /* } */
-  /* //} */
-
-  /* /1* find_closest() method //{ *1/ */
-  /* bool BalloonFilter::find_closest(const std::vector<pos_cov_t>& measuremets, pos_cov_t& closest_out) */
-  /* { */
-  /*   pos_t cur_pos = get_cur_mav_pos(); */
-  /*   return find_closest_to(measuremets, cur_pos, closest_out, false); */
-  /* } */
-  /* //} */
-
   /* msg2cov() method //{ */
   cov_t BalloonFilter::msg2cov(const ros_cov_t& msg_cov)
   {
@@ -1539,15 +1474,16 @@ namespace balloon_filter
   {
     m_bounds_z_min = cfg.bounds__z__min;
     m_bounds_z_max = cfg.bounds__z__max;
-    m_meas_filt_desired_dt = ros::Duration(cfg.meas_filt__desired_dt);
-    m_meas_filt_loglikelihood_threshold = cfg.meas_filt__loglikelihood_threshold;
-    m_meas_filt_covariance_inflation = cfg.meas_filt__covariance_inflation;
+    /* m_meas_filt_desired_dt = ros::Duration(cfg.meas_filt__desired_dt); */
+    /* m_meas_filt_loglikelihood_threshold = cfg.meas_filt__loglikelihood_threshold; */
+    /* m_meas_filt_covariance_inflation = cfg.meas_filt__covariance_inflation; */
     m_max_time_since_update = cfg.max_time_since_update;
     m_min_updates_to_confirm = cfg.min_updates_to_confirm;
 
     /* UKF-related //{ */
     
     m_ukf_prediction_horizon = cfg.ukf__prediction_horizon;
+    m_ukf_prediction_step = cfg.ukf__prediction_step;
     m_ukf_min_radius = cfg.ukf__min_radius;
     
     m_ukf_process_std(ukf::x::x) = m_ukf_process_std(ukf::x::y) = m_ukf_process_std(ukf::x::z) = cfg.ukf__process_std__position;
@@ -1565,6 +1501,7 @@ namespace balloon_filter
     
     m_lkf_min_init_points = cfg.lkf__min_init_points;
     m_lkf_prediction_horizon = cfg.lkf__prediction_horizon;
+    m_lkf_prediction_step = cfg.lkf__prediction_step;
     m_lkf_max_speed_err = cfg.lkf__max_speed_err;
     
     m_lkf_process_std(lkf::x::x) = m_lkf_process_std(lkf::x::y) = m_lkf_process_std(lkf::x::z) = cfg.lkf__process_std__position;
@@ -1579,8 +1516,6 @@ namespace balloon_filter
     //}
 
     m_rheiv_min_pts = cfg.rheiv__min_points;
-
-    m_lpf_cutoff_freq = cfg.lpf__cutoff_freq__curvature;
   }
   //}
 
@@ -1609,7 +1544,7 @@ namespace balloon_filter
     
     //}
 
-    const int measurements_buffer_length = pl.load_param2<int>("meas_filt/buffer_length");
+    /* const int measurements_buffer_length = pl.load_param2<int>("meas_filt/buffer_length"); */
 
     const double processing_period = pl.load_param2<double>("processing_period");
     const double prediction_period = pl.load_param2<double>("prediction_period");
@@ -1623,16 +1558,15 @@ namespace balloon_filter
     // TODO: set the time in some smarter manner
     m_ball_speed_change = ros::Time::now() + ball_speed_change_after;
     pl.load_param("rheiv/fitting_period", m_rheiv_fitting_period);
+    pl.load_param("rheiv/max_line_points_ratio", m_rheiv_max_line_pts_ratio);
     pl.load_param("rheiv/max_points", m_rheiv_max_pts);
     pl.load_param("rheiv/visualization_size", m_rheiv_visualization_size);
     const double rheiv_timeout_s = pl.load_param2<double>("rheiv/timeout");
 
     pl.load_param("ukf/init_history_duration", m_ukf_init_history_duration);
-    pl.load_param("ukf/prediction_step", m_ukf_prediction_step);
 
     pl.load_param("lkf/use_acceleration", m_lkf_use_acceleration);
     pl.load_param("lkf/init_history_duration", m_lkf_init_history_duration);
-    pl.load_param("lkf/prediction_step", m_lkf_prediction_step);
 
     // | ----------------------- safety area ---------------------- |
     /*  //{ */
@@ -1703,8 +1637,6 @@ namespace balloon_filter
     m_pub_ball_prediction = nh.advertise<balloon_filter::BallPrediction>("ball_prediction", 1);
     m_pub_pred_path_dbg = nh.advertise<nav_msgs::Path>("predicted_path", 1);
 
-    m_pub_lpf = nh.advertise<mrs_msgs::Float64Stamped>("low_pass_filtered", 1);
-
     //}
 
     /* profiler //{ */
@@ -1762,7 +1694,7 @@ namespace balloon_filter
     }
     //}
 
-    m_prev_measurements.set_capacity(measurements_buffer_length);
+    /* m_prev_measurements.set_capacity(measurements_buffer_length); */
     reset_estimates();
     if (m_safety_area_initialized)
       m_is_initialized = true;
