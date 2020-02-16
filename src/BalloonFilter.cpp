@@ -638,27 +638,33 @@ namespace balloon_filter
       // get the velocity direction of the measurement
       const pos_t xvec3d = ori_cov.quat*pos_t::UnitX();
       // rotation from the rheiv plane to the to the XY plane
-      const quat_t plane_invquat = plane_orientation(plane_theta).inverse();
+      const quat_t rot_world_to_plane = quat_t::FromTwoVectors(plane_theta.block<3, 1>(0, 0), pos_t::UnitZ());
       // rotate the velocity vector to get its plane coordinates (it's just a vector, so no translation is required)
-      const pos_t xvec2d = plane_invquat*xvec3d;
+      const pos_t xvec2d = rot_world_to_plane*xvec3d;
       // get the yaw of the velocity vector in the plane coordinates
       yaw_opt = std::atan2(xvec2d.y(), xvec2d.x());
+      std::cout << "MEASURED YAW: " << yaw_opt.value() << std::endl;
     }
 
     {
       std::scoped_lock lck(m_ukf_mtx);
       if (yaw_opt.has_value())
       {
+        const double yaw = yaw_opt.value();
+        const double est_yaw = ukf_estimate.x(ukf::x::yaw);
+        const double yaw_diff = mrs_lib::normalize_angle(est_yaw - yaw, -M_PI, M_PI);
+        const double n_yaw = est_yaw - yaw_diff;
         UKF::z_t z(4);
-        z << pos.x(), pos.y(), pos.z(), yaw_opt.value();
+        z << pos.x(), pos.y(), pos.z(), n_yaw;
         UKF::R_t R = UKF::R_t::Zero(4, 4);
         R.block<3, 3>(0, 0) = measurement.pos_cov.cov;
         R(3, 3) = measurement.ori_cov.value().ypr_cov(0, 0);
+        std::cout << "R(3,3): " << R(3, 3) << std::endl;
 
         m_ukf.setObservationModel(ukf::obs_model_f_pose);
         ukf_estimate = m_ukf.correct(ukf_estimate, z, R);
-        ROS_INFO_THROTTLE(MSG_THROTTLE, "[UKF]: Updating current estimate using point [%.2f, %.2f, %.2f] and yaw %.2f", pos.x(), pos.y(),
-                          pos.z(), yaw_opt.value());
+        ROS_INFO_THROTTLE(0, "[UKF]: Updating current estimate using point [%.2f, %.2f, %.2f] and yaw %.2f", pos.x(), pos.y(),
+                          pos.z(), n_yaw);
       }
       else
       {
@@ -667,7 +673,7 @@ namespace balloon_filter
 
         m_ukf.setObservationModel(ukf::obs_model_f_pos);
         ukf_estimate = m_ukf.correct(ukf_estimate, z, R);
-        ROS_INFO_THROTTLE(MSG_THROTTLE, "[UKF]: Updating current estimate using point [%.2f, %.2f, %.2f]", pos.x(), pos.y(),
+        ROS_INFO_THROTTLE(0, "[UKF]: Updating current estimate using point [%.2f, %.2f, %.2f]", pos.x(), pos.y(),
                           pos.z());
       }
     }
