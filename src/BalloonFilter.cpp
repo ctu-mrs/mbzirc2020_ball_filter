@@ -787,12 +787,12 @@ namespace balloon_filter
       ROS_INFO_THROTTLE(MSG_THROTTLE, "[UKF]: Updating current estimate using line");
     }
 
-    /* { */
-    /*   std::scoped_lock lck(m_ukf_mtx); */
-    /*   m_ukf.setObservationModel(ukf::obs_model_f_curv); */
-    /*   ukf_estimate = m_ukf.correct(ukf_estimate, z, R); */
-    /*   ukf_estimate.x(ukf::x::yaw) = ukf_estimate.x(ukf::x::yaw); */
-    /* } */
+    {
+      std::scoped_lock lck(m_ukf_mtx);
+      m_ukf.setObservationModel(ukf::obs_model_f_curv);
+      ukf_estimate = m_ukf.correct(ukf_estimate, z, R);
+      ukf_estimate.x(ukf::x::yaw) = ukf_estimate.x(ukf::x::yaw);
+    }
 
     set_mutexed(m_ukf_estimate_mtx, std::make_tuple(ukf_estimate),
                 std::forward_as_tuple(m_ukf_estimate));
