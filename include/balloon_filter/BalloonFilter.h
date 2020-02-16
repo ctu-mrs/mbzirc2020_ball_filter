@@ -140,10 +140,13 @@ namespace balloon_filter
       double m_bounds_z_min;
       double m_bounds_z_max;
 
+      double m_circle_min_radius;
+      double m_circle_max_radius;
+      double m_circle_threshold_distance;
+
       ros::Duration m_ukf_init_history_duration;
       UKF::x_t m_ukf_process_std;
       UKF::x_t m_ukf_init_std;
-      double m_ukf_min_radius;
       double m_ukf_prediction_horizon;
       double m_ukf_prediction_step;
 
@@ -229,7 +232,21 @@ namespace balloon_filter
       rheiv::theta_t m_rheiv_theta;
       
       //}
-      
+
+      // | ------------ Circle fitting related variables ------------ |
+
+      /*  //{ */
+
+      using pt_XYZ_t = pcl::PointXYZ;
+      using pc_XYZ_t = pcl::PointCloud<pt_XYZ_t>;
+      using circle_params_t = Eigen::Vector3f;
+      std::mutex m_circle_mtx;
+      bool m_circle_valid;
+      theta_t m_circle_last_fit_plane;
+      circle_params_t m_circle_last_fit;
+
+      //}
+
       // | ------------------ UKF related variables ----------------- |
 
       /*  //{ */
@@ -256,16 +273,6 @@ namespace balloon_filter
       
       //}
 
-
-      // | ------------------ LPF related variables ----------------- |
-
-      /*  //{ */
-      
-      double m_lpf_cutoff_freq;
-      ros::Time m_lpf_last_update;
-      double m_curv_filt;
-      
-      //}
 
       // | --------------------- Other variables -------------------- |
 
@@ -321,6 +328,7 @@ namespace balloon_filter
       /* UKF related methods //{ */
       UKF::statecov_t predict_ukf_estimate(const UKF::statecov_t& lkf_estimate, const double dt, const theta_t& plane_theta, const double ball_speed);
       void update_ukf_estimate(const pos_cov_t& measurement, const ros::Time& stamp, const theta_t& plane_theta);
+      void correct_ukf_estimate(const theta_t& circle_plane, const circle_params_t& circle_params);
       std::optional<UKF::statecov_t> estimate_ukf_initial_state(const theta_t& plane_theta);
       void init_ukf_estimate(const ros::Time& stamp, const theta_t& plane_theta);
       std::vector<std::pair<UKF::x_t, ros::Time>> predict_ukf_states(const UKF::statecov_t initial_statecov, const ros::Time& initial_timestamp, const theta_t& plane_theta, const double prediction_horizon, const double prediction_step);
@@ -336,10 +344,9 @@ namespace balloon_filter
       void reset_lkf_estimate();
       //}
 
-      /* LPF related methods //{ */
+      /* Circle fitting related methods //{ */
       
-      double lpf_filter_states(const UKF::x_t& ukf_states, const ros::Time& stamp);
-      void lpf_reset(const UKF::x_t& ukf_states, const ros::Time& stamp);
+      void reset_circle_estimate();
       
       //}
 

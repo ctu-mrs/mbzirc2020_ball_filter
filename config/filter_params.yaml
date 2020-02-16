@@ -8,6 +8,11 @@ ball_speed1: 3.0 # metres per second
 ball_speed2: 3.0 # metres per second
 ball_speed_change_after: 480.0 # seconds (480s is 8min)
 
+circle:
+  min_radius: 2.5 # fitted (RANSAC) or estimated (UKF) circles with radius smaller than this will be discarded
+  max_radius: 28  # fitted circles with radius larger than this will be discarded
+  threshold_distance: 1.5 # point must lie within this distance from the circle to be considered inlier
+
 # meas_filt:
 #   desired_dt: 0.5 # seconds
 #   buffer_length: 10
@@ -32,7 +37,6 @@ lkf:
     acceleration: 0.5
 
 ukf:
-  min_radius: 1.5 # for estimated abs. curvatures larger than this, the UKF will be reset to sanitize the output
   prediction_horizon: 4.0 # seconds
   prediction_step: 0.4 # seconds
   init_history_duration: 20.0 # seconds

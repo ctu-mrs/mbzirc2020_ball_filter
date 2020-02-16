@@ -50,10 +50,10 @@ namespace balloon_filter
         if (curv > 0.0)
         {
           const auto radius = 1.0 / curv;
-          if (radius < m_ukf_min_radius)
+          if (radius < m_circle_min_radius)
           {
             reset_ukf_estimate();
-            ROS_WARN("[UKF]: UKF radius (1/%.2f) estimate is under the threshold (%.2f > %.2f), resetting the UKF!", curv, radius, m_ukf_min_radius);
+            ROS_WARN("[UKF]: UKF radius (1/%.2f) estimate is under the threshold (%.2f > %.2f), resetting the UKF!", curv, radius, m_circle_min_radius);
           }
         }
       }
@@ -102,6 +102,7 @@ namespace balloon_filter
     if ((ros::Time::now() - rheiv_last_data_update).toSec() >= m_max_time_since_update)
     {
       reset_rheiv_estimate();
+      reset_circle_estimate();
       return;
     }
 
@@ -115,8 +116,6 @@ namespace balloon_filter
     {
       ros::Time fit_time_start = ros::Time::now();
 
-      using pt_XYZ_t = pcl::PointXYZ;
-      using pc_XYZ_t = pcl::PointCloud<pt_XYZ_t>;
       pc_XYZ_t::Ptr pointcloud = boost::make_shared<pc_XYZ_t>();
       pointcloud->reserve(rheiv_pts.size());
       for (const auto& pt : rheiv_pts)
@@ -146,7 +145,7 @@ namespace balloon_filter
           ROS_INFO_THROTTLE(MSG_THROTTLE, "[RHEIV]: Point set is well conditioned (ratio of line points is %.2f < %.2f), fitting plane.", line_pts_ratio,
                             m_rheiv_max_line_pts_ratio);
         else
-          ROS_WARN_THROTTLE(MSG_THROTTLE, "[RHEIV]: Point set is NOT well conditioned (ratio of line points is %.2f < %.2f), NOT fitting plane.",
+          ROS_WARN_THROTTLE(MSG_THROTTLE, "[RHEIV]: Point set is NOT well conditioned (ratio of line points is %.2f >= %.2f), NOT fitting plane.",
                             line_pts_ratio, m_rheiv_max_line_pts_ratio);
       }
 
@@ -206,17 +205,17 @@ namespace balloon_filter
       {
         // plane fit is now available - try to fit a circle to the points to find the curvature
         /*  //{ */
-        
+
         {
           // align plane points to the XY plane
           Eigen::Quaternionf quat = plane_orientation(theta).inverse().cast<float>();
           for (auto& pt : pointcloud->points)
-            pt.getVector3fMap() = quat*pt.getVector3fMap();
-        
+            pt.getVector3fMap() = quat * pt.getVector3fMap();
+
           // fit a 2D circle to the points
           auto model_c2d = boost::make_shared<pcl::SampleConsensusModelCircle2D<pt_XYZ_t>>(pointcloud);
           pcl::RandomSampleConsensus<pt_XYZ_t> fitter(model_c2d);
-          fitter.setDistanceThreshold(0.5);
+          fitter.setDistanceThreshold(m_circle_threshold_distance);
           fitter.computeModel();
           Eigen::VectorXf params;
           fitter.getModelCoefficients(params);
@@ -225,16 +224,33 @@ namespace balloon_filter
 
           if (params.size() == 3)
           {
-            ROS_INFO_THROTTLE(MSG_THROTTLE, "[RHEIV]: Fitted circle with radius %.2f to points on the plane (%lus/%lus points are inliers).", params(2), inliers.size(), pointcloud->size());
-            const auto msg = circle_visualization(params(0), params(1), params(2), theta, header);
-            m_pub_circle_dbg.publish(msg);
-          }
-          else
+            const float radius = std::abs(params(2));
+            if (radius < m_circle_min_radius || radius > m_circle_max_radius)
+            {
+              ROS_WARN_THROTTLE(
+                  MSG_THROTTLE,
+                  "[RHEIV]: Fitted INVALID circle with radius %.2fm (not between %.2fm and %.2fm) to points on the plane (%lus/%lus points are inliers).",
+                  m_circle_min_radius, m_circle_max_radius, radius, inliers.size(), pointcloud->size());
+            }
+            // otherwise the circle is valid - hooray! inform the user and save it's state
+            else
+            {
+              ROS_INFO_THROTTLE(MSG_THROTTLE, "[RHEIV]: Fitted circle with radius %.2fm to points on the plane (%lus/%lus points are inliers).", radius,
+                                inliers.size(), pointcloud->size());
+              const auto msg = circle_visualization(params(0), params(1), radius, theta, header);
+              m_pub_circle_dbg.publish(msg);
+
+              std::scoped_lock lck(m_circle_mtx);
+              m_circle_valid = true;
+              m_circle_last_fit_plane = theta;
+              m_circle_last_fit = params;
+            }
+          } else
           {
-            ROS_INFO_THROTTLE(MSG_THROTTLE, "[RHEIV]: Failed to fit a circle to points on the plane (using %lu points).", pointcloud->size());
+            ROS_WARN_THROTTLE(MSG_THROTTLE, "[RHEIV]: Failed to fit a circle to points on the plane (using %lu points).", pointcloud->size());
           }
         }
-        
+
         //}
 
         // publish the results
@@ -380,6 +396,12 @@ namespace balloon_filter
       }
 
       //}
+
+      const auto [circle_valid, circle_plane_theta, circle_params] = get_mutexed(m_circle_mtx, m_circle_valid, m_circle_last_fit_plane, m_circle_last_fit);
+      // if we have a fitted circle, use it to correct the UKF estimated curvature
+      if (circle_valid)
+        correct_ukf_estimate(circle_plane_theta, circle_params);
+
     } else
     {
       if (!plane_theta_valid)
@@ -590,6 +612,45 @@ namespace balloon_filter
 
     set_mutexed(m_ukf_estimate_mtx, std::make_tuple(ukf_estimate_exists, ukf_estimate, ukf_last_update, ukf_n_updates),
                 std::forward_as_tuple(m_ukf_estimate_exists, m_ukf_estimate, m_ukf_last_update, m_ukf_n_updates));
+  }
+  //}
+
+  /* correct_ukf_estimate() method //{ */
+  void BalloonFilter::correct_ukf_estimate(const theta_t& circle_plane, const circle_params_t& circle_params)
+  {
+    auto ukf_estimate =
+        mrs_lib::get_mutexed(m_ukf_estimate_mtx, m_ukf_estimate);
+
+    const auto cx = circle_params(0);
+    const auto cy = circle_params(1);
+    const auto radius = circle_params(2);
+
+    const pos_t cur_pos = get_pos(ukf_estimate.x);
+    const pos_t pos2d = plane_orientation(circle_plane).inverse()*cur_pos;
+    const pos_t rel_pos = pos2d - pos_t(cx, cy, pos2d.z());
+    const double circ_dist = std::abs(rel_pos.norm() - radius);
+    // check if point lies on the circle
+    if (circ_dist < m_circle_threshold_distance)
+    {
+      // find the correct sign of the curvature
+      const double pol_ang = std::atan2(rel_pos.y(), rel_pos.x());
+      const double norm_yaw = ukf_estimate.x(ukf::x::yaw) - pol_ang;
+      double curv = 1.0/radius;
+      if (norm_yaw < 0.0)
+        curv = -curv;
+      ukf_estimate.x(ukf::x::c) = curv;
+      ROS_INFO_THROTTLE(MSG_THROTTLE, "[UKF]: Correcting current estimate using circle radius %.2fm to curvature %.2f", circle_params(2), curv);
+    }
+    else
+    {
+      // if the point does not lie on the circle, assume it's on the line
+      // and set the curvature accordingly
+      ukf_estimate.x(ukf::x::c) = 0.0;
+      ROS_INFO_THROTTLE(MSG_THROTTLE, "[UKF]: Correcting current estimate using line");
+    }
+
+    set_mutexed(m_ukf_estimate_mtx, std::make_tuple(ukf_estimate),
+                std::forward_as_tuple(m_ukf_estimate));
   }
   //}
 
@@ -901,6 +962,20 @@ namespace balloon_filter
   //}
 
   // --------------------------------------------------------------
+  // |               Circle fitting related methods               |
+  // --------------------------------------------------------------
+
+  /* reset_circle_estimate() method //{ */
+  void BalloonFilter::reset_circle_estimate()
+  {
+    std::scoped_lock lck(m_circle_mtx);
+    m_circle_valid = false;
+
+    ROS_WARN("[%s]: Circle estimate ==RESET==.", m_node_name.c_str());
+  }
+  //}
+
+  // --------------------------------------------------------------
   // |                       Helper methods                       |
   // --------------------------------------------------------------
 
@@ -910,6 +985,7 @@ namespace balloon_filter
     reset_lkf_estimate();
     reset_ukf_estimate();
     reset_rheiv_estimate();
+    reset_circle_estimate();
   }
   //}
 
@@ -1023,14 +1099,15 @@ namespace balloon_filter
 
   /* to_output_message() method overloads //{ */
 
-  visualization_msgs::MarkerArray BalloonFilter::circle_visualization(const float cx, const float cy, const float radius, const theta_t& plane_theta, const std_msgs::Header& header)
+  visualization_msgs::MarkerArray BalloonFilter::circle_visualization(const float cx, const float cy, const float radius, const theta_t& plane_theta,
+                                                                      const std_msgs::Header& header)
   {
     visualization_msgs::MarkerArray ret;
     const quat_t quat = plane_orientation(plane_theta);
     const double offset = plane_theta(3) / plane_theta.block<3, 1>(0, 0).norm();
 
     /* lines (the circle itself //{ */
-    
+
     {
       visualization_msgs::Marker lines;
       lines.header = header;
@@ -1044,28 +1121,28 @@ namespace balloon_filter
       lines.pose.orientation.y = quat.y();
       lines.pose.orientation.z = quat.z();
       lines.pose.position.z = offset;
-    
+
       constexpr int circ_pts_per_meter_radius = 10;
-      const int circ_pts = radius*circ_pts_per_meter_radius;
-      for (int it = 0; it < circ_pts+1; it++)
+      const int circ_pts = radius * circ_pts_per_meter_radius;
+      for (int it = 0; it < circ_pts + 1; it++)
       {
-        const float angle = M_PI/(circ_pts/2.0f)*it;
+        const float angle = M_PI / (circ_pts / 2.0f) * it;
         geometry_msgs::Point pt;
-        pt.x = cx + radius*cos(angle);
-        pt.y = cy + radius*sin(angle);
+        pt.x = cx + radius * cos(angle);
+        pt.y = cy + radius * sin(angle);
         pt.z = 0;
         lines.points.push_back(pt);
       }
       ret.markers.push_back(lines);
     }
-    
+
     //}
 
     /* radisu text //{ */
-    
+
     {
-      Eigen::Vector3d center = quat*Eigen::Vector3d(cx, cy, 0) + Eigen::Vector3d(0, 0, offset);
-      Eigen::Vector3d edge = center + quat*Eigen::Vector3d(radius, 0, 0);
+      Eigen::Vector3d center = quat * Eigen::Vector3d(cx, cy, 0) + Eigen::Vector3d(0, 0, offset);
+      Eigen::Vector3d edge = center + quat * Eigen::Vector3d(radius, 0, 0);
       visualization_msgs::Marker text;
       text.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
       text.header = header;
@@ -1083,7 +1160,7 @@ namespace balloon_filter
       text.pose.position.z = edge.z();
       ret.markers.push_back(text);
     }
-    
+
     //}
 
     return ret;
@@ -1553,12 +1630,12 @@ namespace balloon_filter
     /* m_meas_filt_covariance_inflation = cfg.meas_filt__covariance_inflation; */
     m_max_time_since_update = cfg.max_time_since_update;
     m_min_updates_to_confirm = cfg.min_updates_to_confirm;
+    m_circle_min_radius = cfg.circle__min_radius;
 
     /* UKF-related //{ */
 
     m_ukf_prediction_horizon = cfg.ukf__prediction_horizon;
     m_ukf_prediction_step = cfg.ukf__prediction_step;
-    m_ukf_min_radius = cfg.ukf__min_radius;
 
     m_ukf_process_std(ukf::x::x) = m_ukf_process_std(ukf::x::y) = m_ukf_process_std(ukf::x::z) = cfg.ukf__process_std__position;
     m_ukf_process_std(ukf::x::yaw) = cfg.ukf__process_std__yaw;
@@ -1627,6 +1704,9 @@ namespace balloon_filter
     pl.load_param("ball_speed1", m_ball_speed1);
     pl.load_param("ball_speed2", m_ball_speed2);
     pl.load_param("ball_wire_length", m_ball_wire_length);
+
+    pl.load_param("circle/max_radius", m_circle_max_radius);
+    pl.load_param("circle/threshold_distance", m_circle_threshold_distance);
 
     const ros::Duration ball_speed_change_after = pl.load_param2("ball_speed_change_after");
     // TODO: set the time in some smarter manner

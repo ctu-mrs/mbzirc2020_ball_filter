@@ -38,16 +38,18 @@ namespace balloon_filter
       // indices of the measurement interpretations
       enum
       {
+        c = 0, // curvature in the 2D plane
         x = 0, // 3D x-coordinate of the ball position
         y,     // 3D y-coordinate of the ball position
         z,     // 3D z-coordinate of the ball position
+        yaw,   // yaw in the 2D plane
         LENGTH
       };
     }
 
     constexpr int n_states = x::LENGTH;
     constexpr int n_inputs = u::LENGTH;
-    constexpr int n_measurements = z::LENGTH;
+    constexpr int n_measurements = -1; // number of measurements is variable
     using UKF = mrs_lib::UKF<n_states, n_inputs, n_measurements>;
 
     // This function implements the state transition

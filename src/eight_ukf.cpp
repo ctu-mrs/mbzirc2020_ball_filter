@@ -20,17 +20,12 @@ namespace balloon_filter
     using Vec3 = Eigen::Vector3d;
     using Vec2 = Eigen::Vector2d;
 
-    // from https://stackoverflow.com/questions/1903954/is-there-a-standard-sign-function-signum-sgn-in-c-c
-    template <typename T>
-    T sign(T val)
-    {
-      return (T(0) < val) - (val < T(0));
-    }
-
+    /* transition model //{ */
+    
     UKF::x_t tra_model_f(const UKF::x_t& in, const UKF::u_t& u, const double dt)
     {
       x_t out;
-
+    
       // Calculate the complete current state with redundant variables
       const double yaw = in(x::yaw);
       const double speed = std::max(u(u::s), 0.0);
@@ -43,13 +38,13 @@ namespace balloon_filter
       const Vec3 acc_norm = curv*speed*speed*norm;
       const Vec3 dpos = vel_tang*dt + 0.5*acc_norm*dt*dt;
       const Vec3 pos_world(in(x::x), in(x::y), in(x::z));
-
+    
       // Calculate the next estimated state
       const Vec3 n_pos_world = pos_world + quat*dpos;
       /* const double n_speed = speed; // assume constant speed */
       const double n_yaw = yaw + speed*curv*dt;
       const double n_curv = curv;
-
+    
       // Copy the calculated values to the respective states
       out(x::x) = n_pos_world.x();
       out(x::y) = n_pos_world.y();
@@ -57,19 +52,42 @@ namespace balloon_filter
       out(x::yaw) = n_yaw;
       /* out(x::s) = n_speed; */
       out(x::c) = n_curv;
-
+    
       return out;
     }
+    
+    //}
 
+    /* observation models //{ */
+    
     // This function implements the observation generation from a state
-    UKF::z_t obs_model_f(const UKF::x_t& state)
+    UKF::z_t obs_model_f_pos(const UKF::x_t& state)
     {
-      z_t observation;
+      z_t observation(3);
       observation(z::x) = state(x::x);
       observation(z::y) = state(x::y);
       observation(z::z) = state(x::z);
       return observation;
     }
+
+    UKF::z_t obs_model_f_pose(const UKF::x_t& state)
+    {
+      z_t observation(4);
+      observation(z::x) = state(x::x);
+      observation(z::y) = state(x::y);
+      observation(z::z) = state(x::z);
+      observation(z::yaw) = state(x::yaw);
+      return observation;
+    }
+
+    UKF::z_t obs_model_f_curv(const UKF::x_t& state)
+    {
+      z_t observation(1);
+      observation(z::c) = state(x::c);
+      return observation;
+    }
+    
+    //}
 
     double normalize_angle(double in)
     {
