@@ -38,6 +38,7 @@
 // PCL
 #include <pcl/sample_consensus/ransac.h>
 #include <pcl/sample_consensus/sac_model_line.h>
+#include <pcl/sample_consensus/sac_model_circle.h>
 
 // Boost
 #include <boost/circular_buffer.hpp>
@@ -188,7 +189,7 @@ namespace balloon_filter
       ros::Publisher m_pub_ball_prediction;
       ros::Publisher m_pub_pred_path_dbg;
 
-      ros::Publisher m_pub_lpf;
+      ros::Publisher m_pub_circle_dbg;
 
       ros::ServiceServer m_reset_estimates_server;
 
@@ -358,6 +359,7 @@ namespace balloon_filter
       balloon_filter::LKFState to_output_message(const LKF::statecov_t& lkf_statecov);
       balloon_filter::UKFState to_output_message(const UKF::statecov_t& ukf_statecov);
       balloon_filter::Plane to_output_message(const rheiv::theta_t& plane_theta);
+      visualization_msgs::MarkerArray circle_visualization(const float cx, const float cy, const float radius, const theta_t& plane_theta, const std_msgs::Header& header);
 
       pos_t get_cur_mav_pos();
 

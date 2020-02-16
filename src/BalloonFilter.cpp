@@ -32,13 +32,13 @@ namespace balloon_filter
     if (m_ukf_estimate_exists)
     {
       /* check if the current UKF estimate doesn't violate some thresholds, print it //{ */
-      
+
       const auto [plane_theta_valid, plane_theta] = get_mutexed(m_rheiv_theta_mtx, m_rheiv_theta_valid, m_rheiv_theta);
       if (plane_theta_valid)
       {
         const double dt = (ros::Time::now() - m_ukf_last_update).toSec();
         auto cur_estimate = predict_ukf_estimate(m_ukf_estimate, dt, plane_theta, ball_speed_at_time(m_ukf_last_update));
-      
+
         Eigen::IOFormat short_fmt(3);
         cur_estimate.x.format(short_fmt);
         ROS_WARN_STREAM_THROTTLE(MSG_THROTTLE, "[UKF]: Current UKF prediction:" << std::endl
@@ -49,7 +49,7 @@ namespace balloon_filter
         const auto curv = std::abs(cur_estimate.x(ukf::x::c));
         if (curv > 0.0)
         {
-          const auto radius = 1.0/curv;
+          const auto radius = 1.0 / curv;
           if (radius < m_ukf_min_radius)
           {
             reset_ukf_estimate();
@@ -57,17 +57,16 @@ namespace balloon_filter
           }
         }
       }
-      
+
       //}
-    }
-    else if (m_lkf_estimate_exists)
+    } else if (m_lkf_estimate_exists)
     {
       /* check if the current LKF estimate doesn't violate some thresholds, print it //{ */
-      
+
       ros::Time cur_stamp = ros::Time::now();
       const double dt = (cur_stamp - m_lkf_last_update).toSec();
       auto cur_estimate = predict_lkf_estimate(m_lkf_estimate, dt);
-      
+
       Eigen::IOFormat short_fmt(3);
       cur_estimate.x.format(short_fmt);
       ROS_WARN_STREAM_THROTTLE(MSG_THROTTLE, "[LKF]: Current LKF prediction:" << std::endl
@@ -84,7 +83,7 @@ namespace balloon_filter
         reset_lkf_estimate();
         ROS_WARN("[LKF]: LKF speed estimate error exceeded the threshold (%.2f > %.2f), resetting the LKF!", speed_err, m_lkf_max_speed_err);
       }
-      
+
       //}
     }
   }
@@ -96,11 +95,9 @@ namespace balloon_filter
     if (!m_is_initialized)
       return;
     // threadsafe copy the data to be fitted with the plane
-    const auto [rheiv_pts, rheiv_covs, rheiv_new_data, rheiv_last_data_update] = get_set_mutexed(m_rheiv_data_mtx,
-        std::forward_as_tuple(m_rheiv_pts, m_rheiv_covs, m_rheiv_new_data, m_rheiv_last_data_update),
-        std::make_tuple(false, true),
-        std::forward_as_tuple(m_rheiv_new_data, m_rheiv_fitting)
-        );
+    const auto [rheiv_pts, rheiv_covs, rheiv_new_data, rheiv_last_data_update] =
+        get_set_mutexed(m_rheiv_data_mtx, std::forward_as_tuple(m_rheiv_pts, m_rheiv_covs, m_rheiv_new_data, m_rheiv_last_data_update),
+                        std::make_tuple(false, true), std::forward_as_tuple(m_rheiv_new_data, m_rheiv_fitting));
 
     if ((ros::Time::now() - rheiv_last_data_update).toSec() >= m_max_time_since_update)
     {
@@ -117,23 +114,24 @@ namespace balloon_filter
     if (rheiv_pts.size() > (size_t)m_rheiv_min_pts)
     {
       ros::Time fit_time_start = ros::Time::now();
+
+      using pt_XYZ_t = pcl::PointXYZ;
+      using pc_XYZ_t = pcl::PointCloud<pt_XYZ_t>;
+      pc_XYZ_t::Ptr pointcloud = boost::make_shared<pc_XYZ_t>();
+      pointcloud->reserve(rheiv_pts.size());
+      for (const auto& pt : rheiv_pts)
+      {
+        pt_XYZ_t pclpt(pt.x(), pt.y(), pt.z());
+        pointcloud->push_back(pclpt);
+      }
+
       bool well_conditioned = false;
       // First try to fit a line and check how many points are left.
       // This is to make sure that the point set is well conditioned for plane fitting.
       /*  //{ */
-      
+
       {
-        using pt_XYZ_t = pcl::PointXYZ;
-        using pc_XYZ_t = pcl::PointCloud<pt_XYZ_t>;
-        pc_XYZ_t::Ptr line_pts = boost::make_shared<pc_XYZ_t>();
-        line_pts->reserve(rheiv_pts.size());
-        for (const auto& pt : rheiv_pts)
-        {
-          pt_XYZ_t pclpt(pt.x(), pt.y(), pt.z());
-          line_pts->push_back(pclpt);
-        }
-      
-        auto model_l = boost::make_shared<pcl::SampleConsensusModelLine<pt_XYZ_t>>(line_pts);
+        auto model_l = boost::make_shared<pcl::SampleConsensusModelLine<pt_XYZ_t>>(pointcloud);
         pcl::RandomSampleConsensus<pt_XYZ_t> fitter(model_l);
         fitter.setDistanceThreshold(2.0);
         fitter.computeModel();
@@ -141,20 +139,25 @@ namespace balloon_filter
         fitter.getModelCoefficients(params);
         std::vector<int> inliers;
         fitter.getInliers(inliers);
-      
-        const double line_pts_ratio = inliers.size()/double(rheiv_pts.size());
+
+        const double line_pts_ratio = inliers.size() / double(pointcloud->size());
         well_conditioned = line_pts_ratio < m_rheiv_max_line_pts_ratio;
         if (well_conditioned)
-          ROS_INFO_THROTTLE(MSG_THROTTLE, "[RHEIV]: Point set is well conditioned (ratio of line points is %.2f < %.2f), fitting plane.", line_pts_ratio, m_rheiv_max_line_pts_ratio);
+          ROS_INFO_THROTTLE(MSG_THROTTLE, "[RHEIV]: Point set is well conditioned (ratio of line points is %.2f < %.2f), fitting plane.", line_pts_ratio,
+                            m_rheiv_max_line_pts_ratio);
         else
-          ROS_WARN_THROTTLE(MSG_THROTTLE, "[RHEIV]: Point set is NOT well conditioned (ratio of line points is %.2f < %.2f), NOT fitting plane.", line_pts_ratio, m_rheiv_max_line_pts_ratio);
+          ROS_WARN_THROTTLE(MSG_THROTTLE, "[RHEIV]: Point set is NOT well conditioned (ratio of line points is %.2f < %.2f), NOT fitting plane.",
+                            line_pts_ratio, m_rheiv_max_line_pts_ratio);
       }
-      
+
       //}
 
       // only continue if the point set is well conditioned for plane fitting
       if (well_conditioned)
       {
+        // actually try to fit the plane
+        /*  //{ */
+
         // Fitting might throw an exception, so we better try/catch it!
         try
         {
@@ -176,22 +179,68 @@ namespace balloon_filter
                 m_rheiv_theta_valid = true;
                 m_rheiv_theta = theta;
               }
-              ROS_INFO_STREAM_THROTTLE(MSG_THROTTLE, "[RHEIV]: Fitted new plane estimate to " << rheiv_pts.size() << " points in " << (stamp - fit_time_start).toSec()
+              ROS_INFO_STREAM_THROTTLE(MSG_THROTTLE, "[RHEIV]: Fitted new plane estimate to " << rheiv_pts.size() << " points in "
+                                                                                              << (stamp - fit_time_start).toSec()
                                                                                               << "s (angle diff: " << angle_diff << "):" << std::endl
                                                                                               << "[" << theta.transpose() << "]");
             }
             // reset the fitting flag
             m_rheiv_fitting = false;
           }
-        } // try
+        }  // try
         catch (const mrs_lib::eigenvector_exception& ex)
         {
           // Fitting threw exception, notify the user.
           stamp = ros::Time::now();
           ROS_WARN_STREAM_THROTTLE(MSG_THROTTLE, "[RHEIV]: Could not fit plane: '" << ex.what() << "' (took " << (stamp - fit_time_start).toSec() << "s).");
         }
-      } // if (well_conditioned)
-    } else // if (rheiv_pts.size() > (size_t)m_rheiv_min_pts)
+
+        //}
+      }  // if (well_conditioned)
+
+      std_msgs::Header header;
+      header.frame_id = m_world_frame_id;
+      header.stamp = stamp;
+
+      if (success)
+      {
+        // plane fit is now available - try to fit a circle to the points to find the curvature
+        /*  //{ */
+        
+        {
+          // align plane points to the XY plane
+          Eigen::Quaternionf quat = plane_orientation(theta).inverse().cast<float>();
+          for (auto& pt : pointcloud->points)
+            pt.getVector3fMap() = quat*pt.getVector3fMap();
+        
+          // fit a 2D circle to the points
+          auto model_c2d = boost::make_shared<pcl::SampleConsensusModelCircle2D<pt_XYZ_t>>(pointcloud);
+          pcl::RandomSampleConsensus<pt_XYZ_t> fitter(model_c2d);
+          fitter.setDistanceThreshold(0.5);
+          fitter.computeModel();
+          Eigen::VectorXf params;
+          fitter.getModelCoefficients(params);
+          std::vector<int> inliers;
+          fitter.getInliers(inliers);
+
+          if (params.size() == 3)
+          {
+            ROS_INFO_THROTTLE(MSG_THROTTLE, "[RHEIV]: Fitted circle with radius %.2f to points on the plane (%lus/%lus points are inliers).", params(2), inliers.size(), pointcloud->size());
+            const auto msg = circle_visualization(params(0), params(1), params(2), theta, header);
+            m_pub_circle_dbg.publish(msg);
+          }
+          else
+          {
+            ROS_INFO_THROTTLE(MSG_THROTTLE, "[RHEIV]: Failed to fit a circle to points on the plane (using %lu points).", pointcloud->size());
+          }
+        }
+        
+        //}
+
+        // publish the results
+        m_pub_fitted_plane.publish(to_output_message(theta, header));
+      }
+    } else  // if (rheiv_pts.size() > (size_t)m_rheiv_min_pts)
     {
       // Still waiting for enough points to fit the plane through.
       ROS_WARN_STREAM_THROTTLE(MSG_THROTTLE, "[RHEIV]: Not enough points to fit plane (" << rheiv_pts.size() << "/ " << m_rheiv_min_pts << ").");
@@ -205,13 +254,6 @@ namespace balloon_filter
       m_pub_used_pts.publish(to_output_message(rheiv_pts, header));
     }
 
-    if (success)
-    {
-      std_msgs::Header header;
-      header.frame_id = m_world_frame_id;
-      header.stamp = stamp;
-      m_pub_fitted_plane.publish(to_output_message(theta, header));
-    }
     /* // start the fitting process again after the desired delay */
     /* ros::Duration d_remaining = ros::Duration(m_rheiv_fitting_period) - d_cbk; */
     /* if (d_remaining < ros::Duration(0)) */
@@ -228,14 +270,16 @@ namespace balloon_filter
   {
     if (!m_is_initialized)
       return;
-    const auto [lkf_estimate_exists, lkf_estimate, lkf_last_update, lkf_n_updates] = mrs_lib::get_mutexed(m_lkf_estimate_mtx, m_lkf_estimate_exists, m_lkf_estimate, m_lkf_last_update, m_lkf_n_updates);
-    const auto [ukf_estimate_exists, ukf_estimate, ukf_last_update, ukf_n_updates] = mrs_lib::get_mutexed(m_ukf_estimate_mtx, m_ukf_estimate_exists, m_ukf_estimate, m_ukf_last_update, m_ukf_n_updates);
+    const auto [lkf_estimate_exists, lkf_estimate, lkf_last_update, lkf_n_updates] =
+        mrs_lib::get_mutexed(m_lkf_estimate_mtx, m_lkf_estimate_exists, m_lkf_estimate, m_lkf_last_update, m_lkf_n_updates);
+    const auto [ukf_estimate_exists, ukf_estimate, ukf_last_update, ukf_n_updates] =
+        mrs_lib::get_mutexed(m_ukf_estimate_mtx, m_ukf_estimate_exists, m_ukf_estimate, m_ukf_last_update, m_ukf_n_updates);
     const auto [plane_theta_valid, plane_theta] = mrs_lib::get_mutexed(m_rheiv_theta_mtx, m_rheiv_theta_valid, m_rheiv_theta);
 
     balloon_filter::BallPrediction message;
     message.header.frame_id = m_world_frame_id;
     message.header.stamp = ros::Time::now();
-    
+
     balloon_filter::Plane fitted_plane;
     balloon_filter::FilterState filter_state;
     const double expected_speed = ball_speed_at_time(message.header.stamp);
@@ -248,26 +292,26 @@ namespace balloon_filter
     if (lkf_estimate_exists && lkf_n_updates > m_min_updates_to_confirm)
     {
       /* use LKF by default, if available //{ */
-      
+
       const auto predictions = predict_lkf_states(lkf_estimate, lkf_last_update, m_lkf_prediction_horizon, m_lkf_prediction_step, expected_speed);
       message.header.stamp = lkf_last_update;
       filter_state.lkf_state = to_output_message(lkf_estimate);
       filter_state.lkf_state.valid = true;
       predicted_path = to_output_message(predictions, message.header);
-      
+
       //}
     }
 
     if (ukf_estimate_exists && ukf_n_updates > m_min_updates_to_confirm && plane_theta_valid)
     {
       /* use the UKF prediction instead (more precise), if available //{ */
-      
+
       const auto predictions = predict_ukf_states(ukf_estimate, ukf_last_update, plane_theta, m_ukf_prediction_horizon, m_ukf_prediction_step);
       message.header.stamp = ukf_last_update;
       filter_state.ukf_state = to_output_message(ukf_estimate);
       filter_state.ukf_state.valid = true;
       predicted_path = to_output_message(predictions, message.header, plane_theta);
-      
+
       //}
     }
 
@@ -276,11 +320,11 @@ namespace balloon_filter
       fitted_plane = to_output_message(plane_theta);
       fitted_plane.valid = true;
     }
-    
+
     filter_state.fitted_plane = fitted_plane;
     message.filter_state = filter_state;
     message.predicted_path = predicted_path;
-    
+
     m_pub_pred_path_dbg.publish(predicted_path);
     m_pub_ball_prediction.publish(message);
   }
@@ -299,14 +343,14 @@ namespace balloon_filter
     chosen_meas.pos.y() = msg.pose.pose.position.y;
     chosen_meas.pos.z() = msg.pose.pose.position.z;
     chosen_meas.cov = msg2cov(msg.pose.covariance);
-  
+
     add_rheiv_data(chosen_meas.pos, chosen_meas.cov, msg.header.stamp);
-  
+
     // copy the latest plane fit
     const auto [plane_theta_valid, plane_theta] = get_mutexed(m_rheiv_theta_mtx, m_rheiv_theta_valid, m_rheiv_theta);
-  
+
     /* try to publish plane debug visualization markers //{ */
-  
+
     if (plane_theta_valid && (m_pub_plane_dbg.getNumSubscribers() > 0 || m_pub_plane_dbg2.getNumSubscribers()))
     {
       std_msgs::Header header;
@@ -317,25 +361,24 @@ namespace balloon_filter
       if (m_pub_plane_dbg2.getNumSubscribers())
         m_pub_plane_dbg2.publish(to_output_message2(plane_theta, header, get_pos(m_ukf_estimate.x)));
     }
-  
+
     //}
-  
+
     /* update the UKF if possible //{ */
-  
+
     // check if we have all data that is needed
     if (plane_theta_valid)
     {
       /* update the UKF //{ */
-  
+
       if (m_ukf_estimate_exists)
       {
         update_ukf_estimate(chosen_meas, msg.header.stamp, plane_theta);
-      }
-      else
+      } else
       {
         init_ukf_estimate(msg.header.stamp, plane_theta);
       }
-  
+
       //}
     } else
     {
@@ -344,22 +387,21 @@ namespace balloon_filter
         ROS_WARN_STREAM_THROTTLE(MSG_THROTTLE, "[UKF] RHEIV plane theta estimate unavailable, cannot update UKF!");
       }
     }  // if (!measurements.empty() && plane_theta_valid)
-  
+
     //}
-  
+
     /* update the LKF //{ */
-  
+
     if (m_lkf_estimate_exists)
     {
       update_lkf_estimate(chosen_meas, msg.header.stamp);
-    }
-    else
+    } else
     {
       init_lkf_estimate(msg.header.stamp);
     }
-  
+
     //}
-  
+
     ros::Duration del = ros::Time::now() - msg.header.stamp;
     ROS_INFO_STREAM_THROTTLE(MSG_THROTTLE, "[KF]: delay (from image acquisition): " << del.toSec() * 1000.0 << "ms");
     /* ROS_INFO("[%s]: New data processed          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^", m_node_name.c_str()); */
@@ -393,8 +435,7 @@ namespace balloon_filter
         {
           ROS_ERROR("Safety area could not be transformed!");
           return;
-        }
-        else
+        } else
         {
           m_safety_area_border_points.row(it).x() = tfd.value().x;
           m_safety_area_border_points.row(it).y() = tfd.value().y;
@@ -421,8 +462,7 @@ namespace balloon_filter
         {
           ROS_ERROR("Safety area could not be transformed!");
           return;
-        }
-        else
+        } else
         {
           mat.row(it).x() = tfd.value().x;
           mat.row(it).y() = tfd.value().y;
@@ -450,8 +490,7 @@ namespace balloon_filter
         {
           ROS_ERROR("Safety area could not be transformed!");
           return;
-        }
-        else
+        } else
         {
           mat.row(it).x() = tfd.value().x;
           mat.row(it).y() = tfd.value().y;
@@ -464,7 +503,8 @@ namespace balloon_filter
 
     try
     {
-      m_safety_area = std::make_shared<mrs_lib::SafetyZone>(m_safety_area_border_points, m_safety_area_polygon_obstacle_points, m_safety_area_point_obstacle_points);
+      m_safety_area =
+          std::make_shared<mrs_lib::SafetyZone>(m_safety_area_border_points, m_safety_area_polygon_obstacle_points, m_safety_area_point_obstacle_points);
       ROS_INFO("[%s]: Safety zone intialized!", m_node_name.c_str());
     }
     catch (mrs_lib::SafetyZone::BorderError)
@@ -533,7 +573,8 @@ namespace balloon_filter
   /* update_ukf_estimate() method //{ */
   void BalloonFilter::update_ukf_estimate(const pos_cov_t& measurement, const ros::Time& stamp, const theta_t& plane_theta)
   {
-    auto [ukf_estimate_exists, ukf_estimate, ukf_last_update, ukf_n_updates] = mrs_lib::get_mutexed(m_ukf_estimate_mtx, m_ukf_estimate_exists, m_ukf_estimate, m_ukf_last_update, m_ukf_n_updates);
+    auto [ukf_estimate_exists, ukf_estimate, ukf_last_update, ukf_n_updates] =
+        mrs_lib::get_mutexed(m_ukf_estimate_mtx, m_ukf_estimate_exists, m_ukf_estimate, m_ukf_last_update, m_ukf_n_updates);
 
     ROS_INFO_THROTTLE(MSG_THROTTLE, "[UKF]: Updating current estimate using point [%.2f, %.2f, %.2f]", measurement.pos.x(), measurement.pos.y(),
                       measurement.pos.z());
@@ -547,40 +588,37 @@ namespace balloon_filter
     ukf_n_updates++;
     ukf_estimate_exists = true;
 
-    set_mutexed(m_ukf_estimate_mtx,
-        std::make_tuple(ukf_estimate_exists, ukf_estimate, ukf_last_update, ukf_n_updates),
-        std::forward_as_tuple(m_ukf_estimate_exists, m_ukf_estimate, m_ukf_last_update, m_ukf_n_updates));
+    set_mutexed(m_ukf_estimate_mtx, std::make_tuple(ukf_estimate_exists, ukf_estimate, ukf_last_update, ukf_n_updates),
+                std::forward_as_tuple(m_ukf_estimate_exists, m_ukf_estimate, m_ukf_last_update, m_ukf_n_updates));
   }
   //}
 
   /* estimate_ukf_initial_state() method //{ */
   std::optional<UKF::statecov_t> BalloonFilter::estimate_ukf_initial_state(const theta_t& plane_theta)
   {
-    const auto [rheiv_pts, rheiv_covs, rheiv_stamps] = mrs_lib::get_mutexed(m_rheiv_data_mtx,
-        m_rheiv_pts, m_rheiv_covs, m_rheiv_stamps
-        );
-  
+    const auto [rheiv_pts, rheiv_covs, rheiv_stamps] = mrs_lib::get_mutexed(m_rheiv_data_mtx, m_rheiv_pts, m_rheiv_covs, m_rheiv_stamps);
+
     assert(rheiv_pts.size() == rheiv_covs.size());
     assert(rheiv_pts.size() == rheiv_stamps.size());
     assert(!rheiv_pts.empty());
     const int n_pts = rheiv_pts.size();
-  
+
     ros::Time cur_time = ros::Time::now();
     ros::Time last_stamp;
     std::vector<std::tuple<pos_t, cov_t, ros::Time>> used_meass;
-    for (int it = n_pts-1; it >= 0; it--)
+    for (int it = n_pts - 1; it >= 0; it--)
     {
       const auto cur_pt = rheiv_pts.at(it);
       const auto cur_cov = rheiv_covs.at(it);
       const auto cur_stamp = rheiv_stamps.at(it);
-      if (it == n_pts-1)
+      if (it == n_pts - 1)
         last_stamp = cur_stamp;
       if (cur_time - cur_stamp > m_ukf_init_history_duration)
         break;
       used_meass.push_back({cur_pt, cur_cov, cur_stamp});
     }
-  
-    // TODO: 
+
+    // TODO:
     // * fit plane through points (or use latest fit?)
     // * project points to plane
     // * fit a conic to the points
@@ -589,16 +627,17 @@ namespace balloon_filter
 
     if (used_meass.empty())
     {
-      ROS_ERROR("[BalloonFilter]: No recent points available for initial state estimation. Newest point is %.2fs old, need at most %.2fs.", (cur_time - rheiv_stamps.back()).toSec(), m_ukf_init_history_duration.toSec());
+      ROS_ERROR("[BalloonFilter]: No recent points available for initial state estimation. Newest point is %.2fs old, need at most %.2fs.",
+                (cur_time - rheiv_stamps.back()).toSec(), m_ukf_init_history_duration.toSec());
       return std::nullopt;
     }
     ROS_INFO("[UKF]: Trying to initialize UKF using %lu/%i points.", used_meass.size(), n_pts);
-  
+
     UKF::statecov_t statecov;
     ros::Time prev_stamp;
     bool statecov_initd = false;
 
-    for (int it = used_meass.size()-1; it >= 0; it--)
+    for (int it = used_meass.size() - 1; it >= 0; it--)
     {
       const auto [cur_pt, cur_cov, cur_stamp] = used_meass.at(it);
       if (!statecov_initd)
@@ -612,8 +651,7 @@ namespace balloon_filter
         statecov.P.block<3, 3>(ukf::x::x, ukf::x::x) = cur_cov;
         prev_stamp = cur_stamp;
         statecov_initd = true;
-      }
-      else
+      } else
       {
         const double dt = (cur_stamp - prev_stamp).toSec();
         /* assert(dt >= 0.0); */
@@ -636,13 +674,11 @@ namespace balloon_filter
     if (init_statecov_opt.has_value())
     {
       const auto init_statecov = init_statecov_opt.value();
-      ROS_INFO("[UKF]: Initializing estimate using point [%.2f, %.2f, %.2f], yaw %.2f and curvature %.2f",
-          init_statecov.x(ukf::x::x), init_statecov.x(ukf::x::y), init_statecov.x(ukf::x::z),
-          init_statecov.x(ukf::x::yaw), init_statecov.x(ukf::x::c));
+      ROS_INFO("[UKF]: Initializing estimate using point [%.2f, %.2f, %.2f], yaw %.2f and curvature %.2f", init_statecov.x(ukf::x::x),
+               init_statecov.x(ukf::x::y), init_statecov.x(ukf::x::z), init_statecov.x(ukf::x::yaw), init_statecov.x(ukf::x::c));
 
-      set_mutexed(m_ukf_estimate_mtx,
-          std::make_tuple(      init_statecov,  true,                  stamp,             1),
-          std::forward_as_tuple(m_ukf_estimate, m_ukf_estimate_exists, m_ukf_last_update, m_ukf_n_updates));
+      set_mutexed(m_ukf_estimate_mtx, std::make_tuple(init_statecov, true, stamp, 1),
+                  std::forward_as_tuple(m_ukf_estimate, m_ukf_estimate_exists, m_ukf_last_update, m_ukf_n_updates));
     }
   }
   //}
@@ -650,17 +686,16 @@ namespace balloon_filter
   /* reset_ukf_estimate() method //{ */
   void BalloonFilter::reset_ukf_estimate()
   {
-    set_mutexed(m_ukf_estimate_mtx,
-        std::make_tuple(      false,                 ros::Time::now(),  0),
-        std::forward_as_tuple(m_ukf_estimate_exists, m_ukf_last_update, m_ukf_n_updates));
+    set_mutexed(m_ukf_estimate_mtx, std::make_tuple(false, ros::Time::now(), 0),
+                std::forward_as_tuple(m_ukf_estimate_exists, m_ukf_last_update, m_ukf_n_updates));
     ROS_WARN("[%s]: UKF estimate ==RESET==.", m_node_name.c_str());
   }
   //}
 
   /* predict_ukf_states() method //{ */
   std::vector<std::pair<UKF::x_t, ros::Time>> BalloonFilter::predict_ukf_states(const UKF::statecov_t initial_statecov, const ros::Time& initial_timestamp,
-                                                                            const theta_t& plane_theta, const double prediction_horizon,
-                                                                            const double prediction_step)
+                                                                                const theta_t& plane_theta, const double prediction_horizon,
+                                                                                const double prediction_step)
   {
     assert(prediction_step > 0.0);
     assert(prediction_horizon > 0.0);
@@ -690,26 +725,10 @@ namespace balloon_filter
   {
     LKF::A_t A(m_lkf_n_states, m_lkf_n_states);
     if (m_lkf_use_acceleration)
-      A <<
-            1, 0, 0, dt, 0, 0, 0.5*dt*dt, 0, 0,
-            0, 1, 0, 0, dt, 0, 0, 0.5*dt*dt, 0,
-            0, 0, 1, 0, 0, dt, 0, 0, 0.5*dt*dt,
-            0, 0, 0, 1, 0, 0, 1*dt, 0, 0,
-            0, 0, 0, 0, 1, 0, 0, 1*dt, 0,
-            0, 0, 0, 0, 0, 1, 0, 0, 1*dt,
-            0, 0, 0, 0, 0, 0, 1, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 1, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 1
-              ;
+      A << 1, 0, 0, dt, 0, 0, 0.5 * dt * dt, 0, 0, 0, 1, 0, 0, dt, 0, 0, 0.5 * dt * dt, 0, 0, 0, 1, 0, 0, dt, 0, 0, 0.5 * dt * dt, 0, 0, 0, 1, 0, 0, 1 * dt, 0,
+          0, 0, 0, 0, 0, 1, 0, 0, 1 * dt, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1 * dt, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1;
     else
-      A <<
-            1, 0, 0, dt, 0, 0,
-            0, 1, 0, 0, dt, 0,
-            0, 0, 1, 0, 0, dt,
-            0, 0, 0, 1, 0, 0,
-            0, 0, 0, 0, 1, 0,
-            0, 0, 0, 0, 0, 1
-              ;
+      A << 1, 0, 0, dt, 0, 0, 0, 1, 0, 0, dt, 0, 0, 0, 1, 0, 0, dt, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1;
     const LKF::Q_t Q = dt * LKF::Q_t(m_lkf_process_std.asDiagonal()).block(0, 0, m_lkf_n_states, m_lkf_n_states);
     const LKF::u_t u;
     m_lkf.A = A;
@@ -721,7 +740,8 @@ namespace balloon_filter
   /* update_lkf_estimate() method //{ */
   void BalloonFilter::update_lkf_estimate(const pos_cov_t& measurement, const ros::Time& stamp)
   {
-    auto [lkf_estimate_exists, lkf_estimate, lkf_last_update, lkf_n_updates] = mrs_lib::get_mutexed(m_lkf_estimate_mtx, m_lkf_estimate_exists, m_lkf_estimate, m_lkf_last_update, m_lkf_n_updates);
+    auto [lkf_estimate_exists, lkf_estimate, lkf_last_update, lkf_n_updates] =
+        mrs_lib::get_mutexed(m_lkf_estimate_mtx, m_lkf_estimate_exists, m_lkf_estimate, m_lkf_last_update, m_lkf_n_updates);
 
     ROS_INFO_THROTTLE(MSG_THROTTLE, "[LKF]: Updating current estimate using point [%.2f, %.2f, %.2f]", measurement.pos.x(), measurement.pos.y(),
                       measurement.pos.z());
@@ -735,19 +755,16 @@ namespace balloon_filter
     lkf_n_updates++;
     lkf_estimate_exists = true;
 
-    set_mutexed(m_lkf_estimate_mtx,
-        std::make_tuple(lkf_estimate_exists, lkf_estimate, lkf_last_update, lkf_n_updates),
-        std::forward_as_tuple(m_lkf_estimate_exists, m_lkf_estimate, m_lkf_last_update, m_lkf_n_updates));
+    set_mutexed(m_lkf_estimate_mtx, std::make_tuple(lkf_estimate_exists, lkf_estimate, lkf_last_update, lkf_n_updates),
+                std::forward_as_tuple(m_lkf_estimate_exists, m_lkf_estimate, m_lkf_last_update, m_lkf_n_updates));
   }
   //}
 
   /* estimate_lkf_initial_state() method //{ */
   std::optional<LKF::statecov_t> BalloonFilter::estimate_lkf_initial_state()
   {
-    const auto [rheiv_pts, rheiv_covs, rheiv_stamps] = mrs_lib::get_mutexed(m_rheiv_data_mtx,
-        m_rheiv_pts, m_rheiv_covs, m_rheiv_stamps
-        );
-  
+    const auto [rheiv_pts, rheiv_covs, rheiv_stamps] = mrs_lib::get_mutexed(m_rheiv_data_mtx, m_rheiv_pts, m_rheiv_covs, m_rheiv_stamps);
+
     assert(rheiv_pts.size() == rheiv_covs.size());
     assert(rheiv_pts.size() == rheiv_stamps.size());
     assert(!rheiv_pts.empty());
@@ -757,16 +774,16 @@ namespace balloon_filter
       ROS_INFO_THROTTLE(1.0, "[LKF]: Not enough points for LKF initialization: %d/%d", n_pts, m_lkf_min_init_points);
       return std::nullopt;
     }
-  
+
     ros::Time cur_time = ros::Time::now();
     ros::Time last_stamp;
     std::vector<std::tuple<pos_t, cov_t, ros::Time>> used_meass;
-    for (int it = n_pts-1; it >= 0; it--)
+    for (int it = n_pts - 1; it >= 0; it--)
     {
       const auto cur_pt = rheiv_pts.at(it);
       const auto cur_cov = rheiv_covs.at(it);
       const auto cur_stamp = rheiv_stamps.at(it);
-      if (it == n_pts-1)
+      if (it == n_pts - 1)
         last_stamp = cur_stamp;
       if (cur_time - cur_stamp > m_lkf_init_history_duration)
         break;
@@ -775,17 +792,18 @@ namespace balloon_filter
 
     if (used_meass.empty())
     {
-      ROS_ERROR("[BalloonFilter]: No recent points available for initial state estimation. Newest point is %.2fs old, need at most %.2fs.", (cur_time - rheiv_stamps.back()).toSec(), m_lkf_init_history_duration.toSec());
+      ROS_ERROR("[BalloonFilter]: No recent points available for initial state estimation. Newest point is %.2fs old, need at most %.2fs.",
+                (cur_time - rheiv_stamps.back()).toSec(), m_lkf_init_history_duration.toSec());
       return std::nullopt;
     }
     ROS_INFO("[LKF]: Trying to initialize lkf using %lu/%i points.", used_meass.size(), n_pts);
-  
+
     LKF::statecov_t statecov;
     ros::Time prev_stamp;
     bool statecov_initd = false;
     bool speed_initd = false;
 
-    for (int it = used_meass.size()-1; it >= 0; it--)
+    for (int it = used_meass.size() - 1; it >= 0; it--)
     {
       const auto [cur_pt, cur_cov, cur_stamp] = used_meass.at(it);
       if (!statecov_initd)
@@ -796,8 +814,7 @@ namespace balloon_filter
         statecov.P.block<3, 3>(0, 0) = cur_cov;
         prev_stamp = cur_stamp;
         statecov_initd = true;
-      }
-      else
+      } else
       {
         const double dt = (cur_stamp - prev_stamp).toSec();
         if (dt < 0.0)
@@ -806,7 +823,7 @@ namespace balloon_filter
         {
           const pos_t prev_pos = get_pos(statecov.x);
           const pos_t cur_pos = cur_pt;
-          const pos_t cur_spd = (cur_pos - prev_pos)/dt;
+          const pos_t cur_spd = (cur_pos - prev_pos) / dt;
           statecov.x.block<3, 1>(3, 0) = cur_spd;
           speed_initd = true;
         }
@@ -827,23 +844,19 @@ namespace balloon_filter
     {
       const auto init_statecov = init_statecov_opt.value();
       if (m_lkf_use_acceleration)
-        ROS_INFO("[LKF]: Initializing estimate using point [%.2f, %.2f, %.2f], velocity [%.2f, %.2f, %.2f], acceleration [%.2f, %.2f, %.2f]\n speed: %.2f\n accel: %.2f",
-            init_statecov.x(lkf::x::x), init_statecov.x(lkf::x::y), init_statecov.x(lkf::x::z),
-            init_statecov.x(lkf::x::dx), init_statecov.x(lkf::x::dy), init_statecov.x(lkf::x::dz),
-            init_statecov.x(lkf::x::ddx), init_statecov.x(lkf::x::ddy), init_statecov.x(lkf::x::ddz),
-            init_statecov.x.block<3, 1>(3, 0).norm(),
-            init_statecov.x.block<3, 1>(6, 0).norm()
-            );
+        ROS_INFO(
+            "[LKF]: Initializing estimate using point [%.2f, %.2f, %.2f], velocity [%.2f, %.2f, %.2f], acceleration [%.2f, %.2f, %.2f]\n speed: %.2f\n accel: "
+            "%.2f",
+            init_statecov.x(lkf::x::x), init_statecov.x(lkf::x::y), init_statecov.x(lkf::x::z), init_statecov.x(lkf::x::dx), init_statecov.x(lkf::x::dy),
+            init_statecov.x(lkf::x::dz), init_statecov.x(lkf::x::ddx), init_statecov.x(lkf::x::ddy), init_statecov.x(lkf::x::ddz),
+            init_statecov.x.block<3, 1>(3, 0).norm(), init_statecov.x.block<3, 1>(6, 0).norm());
       else
-        ROS_INFO("[LKF]: Initializing estimate using point [%.2f, %.2f, %.2f], velocity [%.2f, %.2f, %.2f]\n speed: %.2f",
-            init_statecov.x(lkf::x::x), init_statecov.x(lkf::x::y), init_statecov.x(lkf::x::z),
-            init_statecov.x(lkf::x::dx), init_statecov.x(lkf::x::dy), init_statecov.x(lkf::x::dz),
-            init_statecov.x.block<3, 1>(3, 0).norm()
-            );
+        ROS_INFO("[LKF]: Initializing estimate using point [%.2f, %.2f, %.2f], velocity [%.2f, %.2f, %.2f]\n speed: %.2f", init_statecov.x(lkf::x::x),
+                 init_statecov.x(lkf::x::y), init_statecov.x(lkf::x::z), init_statecov.x(lkf::x::dx), init_statecov.x(lkf::x::dy), init_statecov.x(lkf::x::dz),
+                 init_statecov.x.block<3, 1>(3, 0).norm());
 
-      set_mutexed(m_lkf_estimate_mtx,
-          std::make_tuple(      init_statecov,  true,                  stamp,             1),
-          std::forward_as_tuple(m_lkf_estimate, m_lkf_estimate_exists, m_lkf_last_update, m_lkf_n_updates));
+      set_mutexed(m_lkf_estimate_mtx, std::make_tuple(init_statecov, true, stamp, 1),
+                  std::forward_as_tuple(m_lkf_estimate, m_lkf_estimate_exists, m_lkf_last_update, m_lkf_n_updates));
     }
   }
   //}
@@ -851,18 +864,15 @@ namespace balloon_filter
   /* reset_lkf_estimate() method //{ */
   void BalloonFilter::reset_lkf_estimate()
   {
-    set_mutexed(m_lkf_estimate_mtx,
-        std::make_tuple(      false,                 ros::Time::now(),  0),
-        std::forward_as_tuple(m_lkf_estimate_exists, m_lkf_last_update, m_lkf_n_updates));
+    set_mutexed(m_lkf_estimate_mtx, std::make_tuple(false, ros::Time::now(), 0),
+                std::forward_as_tuple(m_lkf_estimate_exists, m_lkf_last_update, m_lkf_n_updates));
     ROS_WARN("[%s]: LKF estimate ==RESET==.", m_node_name.c_str());
   }
   //}
 
   /* predict_lkf_states() method //{ */
-  std::vector<std::pair<LKF::x_t, ros::Time>> BalloonFilter::predict_lkf_states(const LKF::statecov_t initial_statecov,
-                                                                                const ros::Time& initial_timestamp,
-                                                                                const double prediction_horizon,
-                                                                                const double prediction_step,
+  std::vector<std::pair<LKF::x_t, ros::Time>> BalloonFilter::predict_lkf_states(const LKF::statecov_t initial_statecov, const ros::Time& initial_timestamp,
+                                                                                const double prediction_horizon, const double prediction_step,
                                                                                 const double set_speed = std::numeric_limits<double>::quiet_NaN())
   {
     assert(prediction_step > 0.0);
@@ -873,8 +883,8 @@ namespace balloon_filter
     if (!std::isnan(set_speed))
     {
       const double cur_speed = statecov.x.block<3, 1>(3, 0).norm();
-      statecov.x.block<3, 1>(3, 0) *= set_speed/cur_speed;
-      statecov.P.block<3, 3>(3, 3) *= set_speed/cur_speed;
+      statecov.x.block<3, 1>(3, 0) *= set_speed / cur_speed;
+      statecov.P.block<3, 3>(3, 3) *= set_speed / cur_speed;
     }
     ros::Time timestamp = initial_timestamp;
     std::vector<std::pair<LKF::x_t, ros::Time>> ret;
@@ -902,29 +912,30 @@ namespace balloon_filter
     reset_rheiv_estimate();
   }
   //}
-  
+
   /* calc_hyp_meas_loglikelihood() method //{ */
   template <unsigned num_dimensions>
   double BalloonFilter::calc_hyp_meas_loglikelihood(const pos_cov_t& hyp, const pos_cov_t& meas, const double cov_inflation)
   {
     const pos_t inn = meas.pos - hyp.pos;
-    const cov_t inn_cov = cov_inflation*(meas.cov + hyp.cov);
+    const cov_t inn_cov = cov_inflation * (meas.cov + hyp.cov);
     cov_t inverse;
     bool invertible;
     double determinant;
     inn_cov.computeInverseAndDetWithCheck(inverse, determinant, invertible);
     if (!invertible)
       ROS_ERROR("[]: Covariance matrix of a measurement is not invertible!! May produce garbage.");
-    constexpr double dylog2pi = num_dimensions*std::log(2*M_PI);
+    constexpr double dylog2pi = num_dimensions * std::log(2 * M_PI);
     const double a = inn.transpose() * inverse * inn;
     const double b = std::log(determinant);
-    const double res = - (a + b + dylog2pi)/2.0;
+    const double res = -(a + b + dylog2pi) / 2.0;
     return res;
   }
   //}
 
   /* find_most_likely_association() method //{ */
-  std::tuple<pos_cov_t, double> BalloonFilter::find_most_likely_association(const pos_cov_t& prev_meas, const std::vector<pos_cov_t>& measurements, const double expected_speed, const double dt, const double cov_inflation)
+  std::tuple<pos_cov_t, double> BalloonFilter::find_most_likely_association(const pos_cov_t& prev_meas, const std::vector<pos_cov_t>& measurements,
+                                                                            const double expected_speed, const double dt, const double cov_inflation)
   {
     pos_cov_t most_likely;
     double max_loglikelihood = std::numeric_limits<double>::lowest();
@@ -932,10 +943,10 @@ namespace balloon_filter
     for (const auto& meas : measurements)
     {
       const auto diff_vec = meas.pos - prev_meas.pos;
-      const auto diff_vec_exp = diff_vec.normalized()*dt*expected_speed;
+      const auto diff_vec_exp = diff_vec.normalized() * dt * expected_speed;
       const auto err_vec = diff_vec - diff_vec_exp;
-      const pos_cov_t err_pos_cov {err_vec, meas.cov};
-      const pos_cov_t tmp_pos_cov {{0.0, 0.0, 0.0}, prev_meas.cov};
+      const pos_cov_t err_pos_cov{err_vec, meas.cov};
+      const pos_cov_t tmp_pos_cov{{0.0, 0.0, 0.0}, prev_meas.cov};
       const double loglikelihood = calc_hyp_meas_loglikelihood<3>(tmp_pos_cov, err_pos_cov, cov_inflation);
       /* ROS_INFO("[]: loglikelihood %lu: %.2f", it, loglikelihood); it++; */
       if (loglikelihood > max_loglikelihood)
@@ -949,13 +960,11 @@ namespace balloon_filter
   //}
 
   /* find_speed_compliant_measurement() method //{ */
-  std::optional<std::pair<pos_cov_t, pos_cov_t>> BalloonFilter::find_speed_compliant_measurement(
-      const std::vector<pos_cov_t>& prev_meass,
-      const std::vector<pos_cov_t>& measurements,
-      const double expected_speed,
-      const double dt,
-      const double loglikelihood_threshold,
-      const double cov_inflation)
+  std::optional<std::pair<pos_cov_t, pos_cov_t>> BalloonFilter::find_speed_compliant_measurement(const std::vector<pos_cov_t>& prev_meass,
+                                                                                                 const std::vector<pos_cov_t>& measurements,
+                                                                                                 const double expected_speed, const double dt,
+                                                                                                 const double loglikelihood_threshold,
+                                                                                                 const double cov_inflation)
   {
     std::optional<pos_cov_t> most_likely = std::nullopt;
     std::optional<pos_cov_t> most_likely_prev = std::nullopt;
@@ -978,8 +987,7 @@ namespace balloon_filter
       {
         ROS_INFO_THROTTLE(1.0, "[BalloonFilter]: Picking measurement with likelihood %.2f", max_loglikelihood);
         ROS_DEBUG("[BalloonFilter]: Picking measurement with likelihood %.2f", max_loglikelihood);
-      }
-      else
+      } else
       {
         ROS_INFO_THROTTLE(1.0, "[BalloonFilter]: No measurement sufficiently likely (most likely is %.2f)", max_loglikelihood);
         ROS_DEBUG("[BalloonFilter]: No measurement sufficiently likely (most likely is %.2f)", max_loglikelihood);
@@ -1014,6 +1022,72 @@ namespace balloon_filter
   //}
 
   /* to_output_message() method overloads //{ */
+
+  visualization_msgs::MarkerArray BalloonFilter::circle_visualization(const float cx, const float cy, const float radius, const theta_t& plane_theta, const std_msgs::Header& header)
+  {
+    visualization_msgs::MarkerArray ret;
+    const quat_t quat = plane_orientation(plane_theta);
+    const double offset = plane_theta(3) / plane_theta.block<3, 1>(0, 0).norm();
+
+    /* lines (the circle itself //{ */
+    
+    {
+      visualization_msgs::Marker lines;
+      lines.header = header;
+      lines.type = visualization_msgs::Marker::LINE_LIST;
+      lines.color.a = 0.8;
+      lines.color.b = 1.0;
+      lines.scale.x = 0.1;
+      lines.ns = "circle";
+      lines.pose.orientation.w = quat.w();
+      lines.pose.orientation.x = quat.x();
+      lines.pose.orientation.y = quat.y();
+      lines.pose.orientation.z = quat.z();
+      lines.pose.position.z = offset;
+    
+      constexpr int circ_pts_per_meter_radius = 10;
+      const int circ_pts = radius*circ_pts_per_meter_radius;
+      for (int it = 0; it < circ_pts+1; it++)
+      {
+        const float angle = M_PI/(circ_pts/2.0f)*it;
+        geometry_msgs::Point pt;
+        pt.x = cx + radius*cos(angle);
+        pt.y = cy + radius*sin(angle);
+        pt.z = 0;
+        lines.points.push_back(pt);
+      }
+      ret.markers.push_back(lines);
+    }
+    
+    //}
+
+    /* radisu text //{ */
+    
+    {
+      Eigen::Vector3d center = quat*Eigen::Vector3d(cx, cy, 0) + Eigen::Vector3d(0, 0, offset);
+      Eigen::Vector3d edge = center + quat*Eigen::Vector3d(radius, 0, 0);
+      visualization_msgs::Marker text;
+      text.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
+      text.header = header;
+      text.color.a = 0.8;
+      text.color.b = 1.0;
+      text.scale.z = 1.0;
+      text.text = "r:" + std::to_string(radius);
+      text.ns = "radius text";
+      text.pose.orientation.w = quat.w();
+      text.pose.orientation.x = quat.x();
+      text.pose.orientation.y = quat.y();
+      text.pose.orientation.z = quat.z();
+      text.pose.position.x = edge.x();
+      text.pose.position.y = edge.y();
+      text.pose.position.z = edge.z();
+      ret.markers.push_back(text);
+    }
+    
+    //}
+
+    return ret;
+  }
 
   /* balloon_filter::BallLocation //{ */
   balloon_filter::BallLocation BalloonFilter::to_output_message(const pos_cov_t& estimate, const std_msgs::Header& header)
@@ -1481,38 +1555,38 @@ namespace balloon_filter
     m_min_updates_to_confirm = cfg.min_updates_to_confirm;
 
     /* UKF-related //{ */
-    
+
     m_ukf_prediction_horizon = cfg.ukf__prediction_horizon;
     m_ukf_prediction_step = cfg.ukf__prediction_step;
     m_ukf_min_radius = cfg.ukf__min_radius;
-    
+
     m_ukf_process_std(ukf::x::x) = m_ukf_process_std(ukf::x::y) = m_ukf_process_std(ukf::x::z) = cfg.ukf__process_std__position;
     m_ukf_process_std(ukf::x::yaw) = cfg.ukf__process_std__yaw;
     /* m_ukf_process_std(ukf::x_s) = cfg.process_std__speed; */
     m_ukf_process_std(ukf::x::c) = cfg.ukf__process_std__curvature;
-    
+
     m_ukf_init_std(ukf::x::yaw) = cfg.ukf__init_std__yaw;
     /* m_init_std(ukf::x_s) = cfg.init_std__speed; */
     m_ukf_init_std(ukf::x::c) = cfg.ukf__init_std__curvature;
-    
+
     //}
 
     /* LKF-related //{ */
-    
+
     m_lkf_min_init_points = cfg.lkf__min_init_points;
     m_lkf_prediction_horizon = cfg.lkf__prediction_horizon;
     m_lkf_prediction_step = cfg.lkf__prediction_step;
     m_lkf_max_speed_err = cfg.lkf__max_speed_err;
-    
+
     m_lkf_process_std(lkf::x::x) = m_lkf_process_std(lkf::x::y) = m_lkf_process_std(lkf::x::z) = cfg.lkf__process_std__position;
     m_lkf_process_std(lkf::x::dx) = m_lkf_process_std(lkf::x::dy) = m_lkf_process_std(lkf::x::dz) = cfg.lkf__process_std__velocity;
     if (m_lkf_use_acceleration)
       m_lkf_process_std(lkf::x::ddx) = m_lkf_process_std(lkf::x::ddy) = m_lkf_process_std(lkf::x::ddz) = cfg.lkf__process_std__acceleration;
-    
+
     m_lkf_init_std(lkf::x::dx) = m_lkf_init_std(lkf::x::dy) = m_lkf_init_std(lkf::x::dz) = cfg.lkf__init_std__velocity;
     if (m_lkf_use_acceleration)
       m_lkf_init_std(lkf::x::ddx) = m_lkf_init_std(lkf::x::ddy) = m_lkf_init_std(lkf::x::ddz) = cfg.lkf__init_std__acceleration;
-    
+
     //}
 
     m_rheiv_min_pts = cfg.rheiv__min_points;
@@ -1539,9 +1613,9 @@ namespace balloon_filter
     const auto uav_name = pl.load_param2<std::string>("uav_name");
 
     /* initialize transformer //{ */
-    
+
     m_transformer = mrs_lib::Transformer(m_node_name, uav_name);
-    
+
     //}
 
     /* const int measurements_buffer_length = pl.load_param2<int>("meas_filt/buffer_length"); */
@@ -1570,33 +1644,32 @@ namespace balloon_filter
 
     // | ----------------------- safety area ---------------------- |
     /*  //{ */
-    
+
     const auto use_safety_area = pl.load_param2<bool>("safety_area/use_safety_area");
     m_safety_area_frame = pl.load_param2<std::string>("safety_area/frame_name");
-    
+
     if (use_safety_area)
     {
       m_safety_area_border_points = pl.load_matrix_dynamic2("safety_area/safety_area", -1, 2);
-    
+
       const auto obstacle_polygons_enabled = pl.load_param2<bool>("safety_area/polygon_obstacles/enabled");
       if (obstacle_polygons_enabled)
         m_safety_area_polygon_obstacle_points = pl.load_matrix_array2("safety_area/polygon_obstacles", std::vector<Eigen::MatrixXd>{});
-    
+
       const auto obstacle_points_enabled = pl.load_param2<bool>("safety_area/point_obstacles/enabled");
       if (obstacle_points_enabled)
         m_safety_area_point_obstacle_points = pl.load_matrix_array2("safety_area/point_obstacles", std::vector<Eigen::MatrixXd>{});
-    
+
       // TODO: remove this when param loader supports proper loading
       for (auto& matrix : m_safety_area_polygon_obstacle_points)
         matrix.transposeInPlace();
 
       m_safety_area_init_timer = nh.createTimer(ros::Duration(1.0), &BalloonFilter::init_safety_area, this);
-    }
-    else
+    } else
     {
       m_safety_area_initialized = true;
     }
-    
+
     //}
 
     if (!pl.loaded_successfully())
@@ -1636,6 +1709,7 @@ namespace balloon_filter
 
     m_pub_ball_prediction = nh.advertise<balloon_filter::BallPrediction>("ball_prediction", 1);
     m_pub_pred_path_dbg = nh.advertise<nav_msgs::Path>("predicted_path", 1);
+    m_pub_circle_dbg = nh.advertise<visualization_msgs::MarkerArray>("fitted_circle_marker", 1);
 
     //}
 
@@ -1647,17 +1721,16 @@ namespace balloon_filter
 
     /* initialize UKF //{ */
     {
-      
+
       UKF::transition_model_t tra_model(ukf::tra_model_f);
       UKF::observation_model_t obs_model(ukf::obs_model_f);
       m_ukf = UKF(ukf::tra_model_f, ukf::obs_model_f);
-      
     }
     //}
 
     /* initialize LKF //{ */
     {
-      
+
       if (m_lkf_use_acceleration)
         m_lkf_n_states = 9;
       else
@@ -1670,27 +1743,25 @@ namespace balloon_filter
       m_lkf_init_std = Eigen::VectorXd(m_lkf_n_states);
       m_lkf_estimate.x = Eigen::VectorXd(m_lkf_n_states);
       m_lkf_estimate.P = Eigen::MatrixXd(m_lkf_n_states, m_lkf_n_states);
-      
     }
     //}
 
     /* initialize RHEIV (the plane-fitting algorithm) //{ */
     {
-      
+
       const rheiv::f_z_t f_z(rheiv::f_z_f);
       const rheiv::dzdx_t dzdx = rheiv::dzdx_t::Identity();
-      const std::chrono::duration<double> rheiv_timeout(rheiv_timeout_s*1000);
+      const std::chrono::duration<double> rheiv_timeout(rheiv_timeout_s * 1000);
       m_rheiv = RHEIV(f_z, dzdx, 1e-15, 1e4, rheiv_timeout);
-      
+
       /* const rheiv_conic::f_z_t f_z_conic(rheiv_conic::f_z_f); */
       /* const rheiv_conic::f_dzdx_t f_dzdx_conic (rheiv_conic::f_dzdx_f); */
       /* m_rheiv_conic = RHEIV_conic(f_z_conic, f_dzdx_conic, 1e-9, 1e3); */
-      
+
       m_rheiv_pts.set_capacity(m_rheiv_max_pts);
       m_rheiv_covs.set_capacity(m_rheiv_max_pts);
       m_rheiv_stamps.set_capacity(m_rheiv_max_pts);
       m_rheiv_theta_valid = false;
-      
     }
     //}
 
