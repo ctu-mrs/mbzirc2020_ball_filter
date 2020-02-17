@@ -284,7 +284,7 @@ namespace balloon_filter
         if (m_pub_plane_dbg.getNumSubscribers() > 0 || m_pub_plane_dbg2.getNumSubscribers() > 0)
         {
           if (m_pub_plane_dbg.getNumSubscribers() > 0)
-            m_pub_plane_dbg.publish(to_output_message(theta, header, rheiv_pts.back()));
+            m_pub_plane_dbg.publish(plane_visualization(theta, header, rheiv_pts.back()));
           if (m_pub_plane_dbg2.getNumSubscribers() > 0)
             m_pub_plane_dbg2.publish(to_output_message2(theta, header, rheiv_pts.back()));
         }
@@ -380,7 +380,7 @@ namespace balloon_filter
     message.predicted_path = predicted_path;
 
     m_pub_pred_path_dbg.publish(predicted_path);
-    m_pub_ball_prediction.publish(message);
+    m_pub_prediction.publish(message);
   }
   //}
 
@@ -1284,13 +1284,10 @@ namespace balloon_filter
   
   //}
 
-  /* circle_visualization() //{ */
-  
-  visualization_msgs::MarkerArray BalloonFilter::circle_visualization(const circle3d_t& circle, const std_msgs::Header& header)
+  /* visualization_msgs::MarkerArray //{ */
+  visualization_msgs::MarkerArray BalloonFilter::plane_visualization(const theta_t& plane_theta, const std_msgs::Header& header, const pos_t& origin)
   {
     visualization_msgs::MarkerArray ret;
-    const quat_t quat = quat_t::FromTwoVectors(pos_t::UnitZ(), circle.normal.cast<double>());
-    const auto radius = circle.radius;
   
     /* delete line markers //{ */
   
@@ -1306,6 +1303,122 @@ namespace balloon_filter
     }
   
     //}
+
+    const auto pos = plane_origin(plane_theta, origin);
+    const auto quat = plane_orientation(plane_theta);
+
+    const double size = m_rheiv_visualization_size;
+    geometry_msgs::Point ptA;
+    ptA.x = size;
+    ptA.y = size;
+    ptA.z = 0;
+    geometry_msgs::Point ptB;
+    ptB.x = -size;
+    ptB.y = size;
+    ptB.z = 0;
+    geometry_msgs::Point ptC;
+    ptC.x = -size;
+    ptC.y = -size;
+    ptC.z = 0;
+    geometry_msgs::Point ptD;
+    ptD.x = size;
+    ptD.y = -size;
+    ptD.z = 0;
+
+    /* borders marker //{ */
+    {
+      visualization_msgs::Marker borders_marker;
+      borders_marker.header = header;
+
+      borders_marker.ns = "borders";
+      borders_marker.id = 0;
+      borders_marker.type = visualization_msgs::Marker::LINE_LIST;
+      borders_marker.action = visualization_msgs::Marker::ADD;
+
+      borders_marker.pose.position.x = pos.x();
+      borders_marker.pose.position.y = pos.y();
+      borders_marker.pose.position.z = pos.z();
+
+      borders_marker.pose.orientation.x = quat.x();
+      borders_marker.pose.orientation.y = quat.y();
+      borders_marker.pose.orientation.z = quat.z();
+      borders_marker.pose.orientation.w = quat.w();
+
+      borders_marker.scale.x = 0.1;
+
+      borders_marker.color.a = 0.5;  // Don't forget to set the alpha!
+      borders_marker.color.r = 0.0;
+      borders_marker.color.g = 0.0;
+      borders_marker.color.b = 1.0;
+
+      borders_marker.points.push_back(ptA);
+      borders_marker.points.push_back(ptB);
+
+      borders_marker.points.push_back(ptB);
+      borders_marker.points.push_back(ptC);
+
+      borders_marker.points.push_back(ptC);
+      borders_marker.points.push_back(ptD);
+
+      borders_marker.points.push_back(ptD);
+      borders_marker.points.push_back(ptA);
+
+      ret.markers.push_back(borders_marker);
+    }
+    //}
+
+    /* plane marker //{ */
+    {
+      visualization_msgs::Marker plane_marker;
+      plane_marker.header = header;
+
+      plane_marker.ns = "plane";
+      plane_marker.id = 1;
+      plane_marker.type = visualization_msgs::Marker::TRIANGLE_LIST;
+      plane_marker.action = visualization_msgs::Marker::ADD;
+
+      plane_marker.pose.position.x = pos.x();
+      plane_marker.pose.position.y = pos.y();
+      plane_marker.pose.position.z = pos.z();
+
+      plane_marker.pose.orientation.x = quat.x();
+      plane_marker.pose.orientation.y = quat.y();
+      plane_marker.pose.orientation.z = quat.z();
+      plane_marker.pose.orientation.w = quat.w();
+
+      plane_marker.scale.x = 1;
+      plane_marker.scale.y = 1;
+      plane_marker.scale.z = 1;
+
+      plane_marker.color.a = 0.2;  // Don't forget to set the alpha!
+      plane_marker.color.r = 0.0;
+      plane_marker.color.g = 0.0;
+      plane_marker.color.b = 1.0;
+
+      // triangle ABC
+      plane_marker.points.push_back(ptA);
+      plane_marker.points.push_back(ptB);
+      plane_marker.points.push_back(ptC);
+
+      // triangle ACD
+      plane_marker.points.push_back(ptA);
+      plane_marker.points.push_back(ptC);
+      plane_marker.points.push_back(ptD);
+      ret.markers.push_back(plane_marker);
+    }
+    //}
+
+    return ret;
+  }
+  //}
+
+  /* circle_visualization() //{ */
+  
+  visualization_msgs::MarkerArray BalloonFilter::circle_visualization(const circle3d_t& circle, const std_msgs::Header& header)
+  {
+    visualization_msgs::MarkerArray ret;
+    const quat_t quat = quat_t::FromTwoVectors(pos_t::UnitZ(), circle.normal.cast<double>());
+    const auto radius = circle.radius;
   
     /* lines (the circle itself) //{ */
   
@@ -1431,119 +1544,6 @@ namespace balloon_filter
           ret.pose.covariance[r * 6 + c] = 0.0;
       }
     }
-
-    return ret;
-  }
-  //}
-
-  /* visualization_msgs::MarkerArray //{ */
-  visualization_msgs::MarkerArray BalloonFilter::to_output_message(const theta_t& plane_theta, const std_msgs::Header& header, const pos_t& origin)
-  {
-    visualization_msgs::MarkerArray ret;
-
-    const auto pos = plane_origin(plane_theta, origin);
-    const auto quat = plane_orientation(plane_theta);
-
-    const double size = m_rheiv_visualization_size;
-    geometry_msgs::Point ptA;
-    ptA.x = size;
-    ptA.y = size;
-    ptA.z = 0;
-    geometry_msgs::Point ptB;
-    ptB.x = -size;
-    ptB.y = size;
-    ptB.z = 0;
-    geometry_msgs::Point ptC;
-    ptC.x = -size;
-    ptC.y = -size;
-    ptC.z = 0;
-    geometry_msgs::Point ptD;
-    ptD.x = size;
-    ptD.y = -size;
-    ptD.z = 0;
-
-    /* borders marker //{ */
-    {
-      visualization_msgs::Marker borders_marker;
-      borders_marker.header = header;
-
-      borders_marker.ns = "borders";
-      borders_marker.id = 0;
-      borders_marker.type = visualization_msgs::Marker::LINE_LIST;
-      borders_marker.action = visualization_msgs::Marker::ADD;
-
-      borders_marker.pose.position.x = pos.x();
-      borders_marker.pose.position.y = pos.y();
-      borders_marker.pose.position.z = pos.z();
-
-      borders_marker.pose.orientation.x = quat.x();
-      borders_marker.pose.orientation.y = quat.y();
-      borders_marker.pose.orientation.z = quat.z();
-      borders_marker.pose.orientation.w = quat.w();
-
-      borders_marker.scale.x = 0.1;
-
-      borders_marker.color.a = 0.5;  // Don't forget to set the alpha!
-      borders_marker.color.r = 0.0;
-      borders_marker.color.g = 0.0;
-      borders_marker.color.b = 1.0;
-
-      borders_marker.points.push_back(ptA);
-      borders_marker.points.push_back(ptB);
-
-      borders_marker.points.push_back(ptB);
-      borders_marker.points.push_back(ptC);
-
-      borders_marker.points.push_back(ptC);
-      borders_marker.points.push_back(ptD);
-
-      borders_marker.points.push_back(ptD);
-      borders_marker.points.push_back(ptA);
-
-      ret.markers.push_back(borders_marker);
-    }
-    //}
-
-    /* plane marker //{ */
-    {
-      visualization_msgs::Marker plane_marker;
-      plane_marker.header = header;
-
-      plane_marker.ns = "plane";
-      plane_marker.id = 1;
-      plane_marker.type = visualization_msgs::Marker::TRIANGLE_LIST;
-      plane_marker.action = visualization_msgs::Marker::ADD;
-
-      plane_marker.pose.position.x = pos.x();
-      plane_marker.pose.position.y = pos.y();
-      plane_marker.pose.position.z = pos.z();
-
-      plane_marker.pose.orientation.x = quat.x();
-      plane_marker.pose.orientation.y = quat.y();
-      plane_marker.pose.orientation.z = quat.z();
-      plane_marker.pose.orientation.w = quat.w();
-
-      plane_marker.scale.x = 1;
-      plane_marker.scale.y = 1;
-      plane_marker.scale.z = 1;
-
-      plane_marker.color.a = 0.2;  // Don't forget to set the alpha!
-      plane_marker.color.r = 0.0;
-      plane_marker.color.g = 0.0;
-      plane_marker.color.b = 1.0;
-
-      // triangle ABC
-      plane_marker.points.push_back(ptA);
-      plane_marker.points.push_back(ptB);
-      plane_marker.points.push_back(ptC);
-
-      // triangle ACD
-      plane_marker.points.push_back(ptA);
-      plane_marker.points.push_back(ptC);
-      plane_marker.points.push_back(ptD);
-      ret.markers.push_back(plane_marker);
-    }
-    //}
 
     return ret;
   }
@@ -1999,7 +1999,7 @@ namespace balloon_filter
     m_pub_used_pts = nh.advertise<sensor_msgs::PointCloud2>("fit_points", 1);
     m_pub_fitted_plane = nh.advertise<balloon_filter::PlaneStamped>("fitted_plane", 1);
 
-    m_pub_ball_prediction = nh.advertise<balloon_filter::BallPrediction>("ball_prediction", 1);
+    m_pub_prediction = nh.advertise<balloon_filter::BallPrediction>("prediction", 1);
     m_pub_pred_path_dbg = nh.advertise<nav_msgs::Path>("predicted_path", 1);
     m_pub_circle_dbg = nh.advertise<visualization_msgs::MarkerArray>("fitted_circle_marker", 1);
 

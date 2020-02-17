@@ -246,7 +246,7 @@ namespace balloon_filter
 
       ros::Publisher m_pub_chosen_meas;
       ros::Publisher m_pub_chosen_meas_dbg;
-      ros::Publisher m_pub_ball_prediction;
+      ros::Publisher m_pub_prediction;
       ros::Publisher m_pub_pred_path_dbg;
 
       ros::Publisher m_pub_circle_dbg;
@@ -367,8 +367,6 @@ namespace balloon_filter
       }
       //}
 
-      template <unsigned num_dimensions>
-      double calc_hyp_meas_loglikelihood(const pos_cov_t& hyp, const pos_cov_t& meas, const double cov_inflation);
       cov_t msg2cov(const ros_cov_t& msg_cov, int offset = 0);
       cov_t rotate_covariance(const cov_t& covariance, const cov_t& rotation);
       bool point_valid(const pos_t& pt);
@@ -419,7 +417,6 @@ namespace balloon_filter
 
       balloon_filter::BallLocation to_output_message(const pos_cov_t& estimate, const std_msgs::Header& header);
       geometry_msgs::PoseWithCovarianceStamped to_output_message2(const pos_cov_t& estimate, const std_msgs::Header& header);
-      visualization_msgs::MarkerArray to_output_message(const theta_t& plane_theta, const std_msgs::Header& header, const pos_t& origin);
       geometry_msgs::PoseStamped to_output_message2(const theta_t& plane_theta, const std_msgs::Header& header, const pos_t& origin);
       nav_msgs::Path to_output_message(const std::vector<std::pair<UKF::x_t, ros::Time>>& predictions, const std_msgs::Header& header, const theta_t& plane_theta);
       nav_msgs::Path to_output_message(const std::vector<std::pair<LKF::x_t, ros::Time>>& predictions, const std_msgs::Header& header);
@@ -429,6 +426,7 @@ namespace balloon_filter
       balloon_filter::UKFState to_output_message(const UKF::statecov_t& ukf_statecov);
       balloon_filter::Plane to_output_message(const rheiv::theta_t& plane_theta);
       visualization_msgs::MarkerArray line_visualization(const line3d_t& line, const std_msgs::Header& header, const std::string& text);
+      visualization_msgs::MarkerArray plane_visualization(const theta_t& plane_theta, const std_msgs::Header& header, const pos_t& origin);
       visualization_msgs::MarkerArray circle_visualization(const circle3d_t& circle, const std_msgs::Header& header);
 
       pos_t get_cur_mav_pos();

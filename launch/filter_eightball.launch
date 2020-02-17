@@ -35,10 +35,9 @@
       <rosparam file="$(arg world_file)" command="load" />
 
       <!-- Subscribers -->
-      <remap from="~localized_ball" to="uav_detection/detection_" />
+      <remap from="~localized_ball" to="uav_detection/detection" />
 
       <!-- Publishers -->
-      <remap from="~measurement_filter" to="~measurement_filter" />
       <remap from="~chosen_measurement" to="~chosen_measurement" />
       <remap from="~chosen_measurement_dbg" to="~chosen_measurement_dbg" />
 
@@ -46,8 +45,8 @@
       <remap from="~fitted_plane_pose" to="~fitted_plane_pose" />
       <remap from="~fit_points" to="~fit_points" />
       <remap from="~fitted_plane" to="~fitted_plane" />
-      <remap from="~ball_prediction" to="~ball_prediction" />
-      <remap from="~predicted_path" to="~predicted_path_" />
+      <remap from="~prediction" to="~prediction" />
+      <remap from="~predicted_path" to="~predicted_path" />
 
       <remap from="~low_pass_filtered" to="~low_pass_filtered" />
 
