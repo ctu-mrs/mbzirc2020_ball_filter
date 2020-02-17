@@ -129,17 +129,18 @@ namespace balloon_filter
       // This is to make sure that the point set is well conditioned for plane fitting.
       /*  //{ */
 
+      Eigen::VectorXf line_params;
+      double line_pts_ratio;
       {
         auto model_l = boost::make_shared<pcl::SampleConsensusModelLine<pt_XYZ_t>>(pointcloud);
         pcl::RandomSampleConsensus<pt_XYZ_t> fitter(model_l);
-        fitter.setDistanceThreshold(2.0);
+        fitter.setDistanceThreshold(m_linefit_threshold_distance);
         fitter.computeModel();
-        Eigen::VectorXf params;
-        fitter.getModelCoefficients(params);
+        fitter.getModelCoefficients(line_params);
         std::vector<int> inliers;
         fitter.getInliers(inliers);
 
-        const double line_pts_ratio = inliers.size() / double(pointcloud->size());
+        line_pts_ratio = inliers.size() / double(pointcloud->size());
         well_conditioned = line_pts_ratio < m_rheiv_max_line_pts_ratio;
         if (well_conditioned)
           ROS_INFO_THROTTLE(MSG_THROTTLE, "[RHEIV]: Point set is well conditioned (ratio of line points is %.2f < %.2f), fitting plane.", line_pts_ratio,
@@ -150,6 +151,10 @@ namespace balloon_filter
       }
 
       //}
+
+      std_msgs::Header header;
+      header.frame_id = m_world_frame_id;
+      header.stamp = stamp;
 
       // only continue if the point set is well conditioned for plane fitting
       if (well_conditioned)
@@ -196,10 +201,20 @@ namespace balloon_filter
 
         //}
       }  // if (well_conditioned)
-
-      std_msgs::Header header;
-      header.frame_id = m_world_frame_id;
-      header.stamp = stamp;
+      // otherwise display the line fit to the user if no previous fit is available to be used
+      else if (!m_rheiv_theta_valid)
+      {
+        if (m_pub_plane_dbg.getNumSubscribers() > 0)
+        {
+          std::string txt = "ratio: " + std::to_string(line_pts_ratio);
+          line3d_t line;
+          line.origin = line_params.block<3, 1>(0, 0).cast<double>();
+          line.direction = 100.0*line_params.block<3, 1>(3, 0).cast<double>();
+          line.origin -= line.direction/2.0;
+          line.radius = m_linefit_threshold_distance;
+          m_pub_plane_dbg.publish(line_visualization(line, header, txt));
+        }
+      }
 
       if (success)
       {
@@ -260,6 +275,18 @@ namespace balloon_filter
           {
             ROS_WARN_THROTTLE(MSG_THROTTLE, "[RHEIV]: Failed to fit a circle to points on the plane (using %lu points).", pointcloud->size());
           }
+        }
+
+        //}
+
+        /* try to publish plane debug visualization markers //{ */
+
+        if (m_pub_plane_dbg.getNumSubscribers() > 0 || m_pub_plane_dbg2.getNumSubscribers() > 0)
+        {
+          if (m_pub_plane_dbg.getNumSubscribers() > 0)
+            m_pub_plane_dbg.publish(to_output_message(theta, header, rheiv_pts.back()));
+          if (m_pub_plane_dbg2.getNumSubscribers() > 0)
+            m_pub_plane_dbg2.publish(to_output_message2(theta, header, rheiv_pts.back()));
         }
 
         //}
@@ -388,21 +415,6 @@ namespace balloon_filter
 
     // copy the latest plane fit
     const auto [plane_theta_valid, plane_theta] = get_mutexed(m_rheiv_theta_mtx, m_rheiv_theta_valid, m_rheiv_theta);
-
-    /* try to publish plane debug visualization markers //{ */
-
-    if (plane_theta_valid && (m_pub_plane_dbg.getNumSubscribers() > 0 || m_pub_plane_dbg2.getNumSubscribers()))
-    {
-      std_msgs::Header header;
-      header.frame_id = m_world_frame_id;
-      header.stamp = ros::Time::now();
-      if (m_pub_plane_dbg.getNumSubscribers())
-        m_pub_plane_dbg.publish(to_output_message(plane_theta, header, get_pos(m_ukf_estimate.x)));
-      if (m_pub_plane_dbg2.getNumSubscribers())
-        m_pub_plane_dbg2.publish(to_output_message2(plane_theta, header, get_pos(m_ukf_estimate.x)));
-    }
-
-    //}
 
     /* update the UKF if possible //{ */
 
@@ -1197,17 +1209,110 @@ namespace balloon_filter
 
   /* to_output_message() method overloads //{ */
 
+  /* line_visualization() //{ */
+  
+  visualization_msgs::MarkerArray BalloonFilter::line_visualization(const line3d_t& line, const std_msgs::Header& header, const std::string& text = "")
+  {
+    visualization_msgs::MarkerArray ret;
+    Eigen::Vector3d center = line.origin + line.direction/2.0;
+  
+    /* delete plane markers //{ */
+  
+    {
+      visualization_msgs::Marker m;
+      m.action = visualization_msgs::Marker::DELETE;
+      m.id = 0;
+      m.ns = "circle";
+      ret.markers.push_back(m);
+      m.id = 1;
+      m.ns = "radius text";
+      ret.markers.push_back(m);
+    }
+  
+    //}
+  
+    /* lines (the line itself) //{ */
+  
+    {
+      const quat_t quat = quat_t::FromTwoVectors(pos_t::UnitZ(), line.direction);
+      visualization_msgs::Marker linem;
+      linem.id = 2;
+      linem.header = header;
+      linem.type = visualization_msgs::Marker::CYLINDER;
+      linem.color.a = 0.8;
+      linem.color.b = 1.0;
+      linem.scale.x = line.radius;
+      linem.scale.y = line.radius;
+      linem.scale.z = line.direction.norm();
+      linem.ns = "line";
+      linem.pose.orientation.w = quat.w();
+      linem.pose.orientation.x = quat.x();
+      linem.pose.orientation.y = quat.y();
+      linem.pose.orientation.z = quat.z();
+      linem.pose.position.x = center.x();
+      linem.pose.position.y = center.y();
+      linem.pose.position.z = center.z();
+      ret.markers.push_back(linem);
+    }
+  
+    //}
+  
+    /* text //{ */
+  
+    if (!text.empty())
+    {
+      visualization_msgs::Marker textm;
+      textm.id = 3;
+      textm.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
+      textm.header = header;
+      textm.color.a = 0.8;
+      textm.color.b = 1.0;
+      textm.scale.z = 1.0;
+      textm.text = text;
+      textm.ns = "radius text";
+      textm.pose.orientation.w = 1.0;
+      textm.pose.position.x = center.x();
+      textm.pose.position.y = center.y();
+      textm.pose.position.z = center.z();
+      ret.markers.push_back(textm);
+    }
+  
+    //}
+  
+    return ret;
+  }
+  
+  //}
+
+  /* circle_visualization() //{ */
+  
   visualization_msgs::MarkerArray BalloonFilter::circle_visualization(const circle3d_t& circle, const std_msgs::Header& header)
   {
     visualization_msgs::MarkerArray ret;
     const quat_t quat = quat_t::FromTwoVectors(pos_t::UnitZ(), circle.normal.cast<double>());
     const auto radius = circle.radius;
-
+  
+    /* delete line markers //{ */
+  
+    {
+      visualization_msgs::Marker m;
+      m.action = visualization_msgs::Marker::DELETE;
+      m.id = 3;
+      m.ns = "line";
+      ret.markers.push_back(m);
+      m.id = 4;
+      m.ns = "radius text";
+      ret.markers.push_back(m);
+    }
+  
+    //}
+  
     /* lines (the circle itself) //{ */
-
+  
     {
       visualization_msgs::Marker lines;
       lines.header = header;
+      lines.id = 0;
       lines.type = visualization_msgs::Marker::LINE_LIST;
       lines.color.a = 0.8;
       lines.color.b = 1.0;
@@ -1220,7 +1325,7 @@ namespace balloon_filter
       lines.pose.position.x = circle.center.x();
       lines.pose.position.y = circle.center.y();
       lines.pose.position.z = circle.center.z();
-
+  
       constexpr int circ_pts_per_meter_radius = 10;
       int circ_pts = std::round(radius * circ_pts_per_meter_radius);
       if (circ_pts % 2)
@@ -1236,16 +1341,17 @@ namespace balloon_filter
       }
       ret.markers.push_back(lines);
     }
-
+  
     //}
-
+  
     /* radisu text //{ */
-
+  
     {
       Eigen::Vector3d edge = circle.center + quat * Eigen::Vector3d(radius, 0, 0);
       visualization_msgs::Marker text;
       text.type = visualization_msgs::Marker::TEXT_VIEW_FACING;
       text.header = header;
+      text.id = 1;
       text.color.a = 0.8;
       text.color.b = 1.0;
       text.scale.z = 1.0;
@@ -1260,11 +1366,13 @@ namespace balloon_filter
       text.pose.position.z = edge.z();
       ret.markers.push_back(text);
     }
-
+  
     //}
-
+  
     return ret;
   }
+  
+  //}
 
   /* balloon_filter::BallLocation //{ */
   balloon_filter::BallLocation BalloonFilter::to_output_message(const pos_cov_t& estimate, const std_msgs::Header& header)
@@ -1804,6 +1912,8 @@ namespace balloon_filter
     pl.load_param("ball_speed1", m_ball_speed1);
     pl.load_param("ball_speed2", m_ball_speed2);
     pl.load_param("ball_wire_length", m_ball_wire_length);
+
+    pl.load_param("line/threshold_distance", m_linefit_threshold_distance);
 
     pl.load_param("circle/max_radius", m_circle_max_radius);
     pl.load_param("circle/fit_threshold_distance", m_circle_fit_threshold_distance);

@@ -132,6 +132,12 @@ namespace balloon_filter
     pos_cov_t pos_cov;
     std::optional<ori_cov_t> ori_cov = std::nullopt;
   };
+  struct line3d_t
+  {
+    Eigen::Vector3d origin;
+    Eigen::Vector3d direction;
+    double radius; // thickness of the line
+  };
 
   using mrs_lib::get_mutexed;
   using mrs_lib::set_mutexed;
@@ -184,6 +190,8 @@ namespace balloon_filter
       double m_min_updates_to_confirm;
       double m_bounds_z_min;
       double m_bounds_z_max;
+
+      double m_linefit_threshold_distance;
 
       double m_circle_min_radius;
       double m_circle_max_radius;
@@ -420,6 +428,7 @@ namespace balloon_filter
       balloon_filter::LKFState to_output_message(const LKF::statecov_t& lkf_statecov);
       balloon_filter::UKFState to_output_message(const UKF::statecov_t& ukf_statecov);
       balloon_filter::Plane to_output_message(const rheiv::theta_t& plane_theta);
+      visualization_msgs::MarkerArray line_visualization(const line3d_t& line, const std_msgs::Header& header, const std::string& text);
       visualization_msgs::MarkerArray circle_visualization(const circle3d_t& circle, const std_msgs::Header& header);
 
       pos_t get_cur_mav_pos();
