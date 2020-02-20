@@ -1284,7 +1284,7 @@ namespace balloon_filter
   
   //}
 
-  /* visualization_msgs::MarkerArray //{ */
+  /* plane_visualization //{ */
   visualization_msgs::MarkerArray BalloonFilter::plane_visualization(const theta_t& plane_theta, const std_msgs::Header& header, const pos_t& origin)
   {
     visualization_msgs::MarkerArray ret;
