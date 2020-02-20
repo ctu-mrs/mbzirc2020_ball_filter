@@ -79,6 +79,7 @@
 // std
 #include <string>
 #include <mutex>
+#include <algorithm>
 
 // local includes
 #include <balloon_filter/vel_lkf.h>
@@ -114,9 +115,21 @@ namespace balloon_filter
   using pos_t = RHEIV::x_t;
   using cov_t = RHEIV::P_t;
   using theta_t = RHEIV::theta_t;
+
+  using vec3_t = Eigen::Vector3d;
   using quat_t = Eigen::Quaterniond;
   using anax_t = Eigen::AngleAxisd;
 
+  struct pose_t
+  {
+    pos_t pos;
+    std::optional<quat_t> quat = std::nullopt;
+  };
+  struct pose_stamped_t
+  {
+    pose_t pose;
+    float stamp;
+  };
   struct pos_cov_t
   {
     pos_t pos;
@@ -158,7 +171,7 @@ namespace balloon_filter
 
       void main_loop(const ros::TimerEvent& evt);
       void rheiv_loop(const ros::TimerEvent& evt);
-      void lpf_loop(const ros::TimerEvent& evt);
+      void linefit_loop(const ros::TimerEvent& evt);
       void prediction_loop(const ros::TimerEvent& evt);
 
       void process_measurement(const geometry_msgs::PoseWithCovarianceStamped& msg);
@@ -178,7 +191,12 @@ namespace balloon_filter
       std::string m_uav_frame_id;
       std::string m_safety_area_frame;
 
+      double m_linefit_threshold_distance;
+      double m_linefit_fitting_period;
+      int m_linefit_min_pts;
+
       double m_rheiv_fitting_period;
+      double m_rheiv_line_threshold_distance;
       double m_rheiv_max_line_pts_ratio;
       int m_rheiv_min_pts;
       int m_rheiv_max_pts;
@@ -190,8 +208,6 @@ namespace balloon_filter
       double m_min_updates_to_confirm;
       double m_bounds_z_min;
       double m_bounds_z_max;
-
-      double m_linefit_threshold_distance;
 
       double m_circle_min_radius;
       double m_circle_max_radius;
@@ -239,6 +255,11 @@ namespace balloon_filter
       ros::Publisher m_pub_dbg;
       ros::Publisher m_pub_pcl_dbg;
 
+      ros::Publisher m_pub_line1;
+      ros::Publisher m_pub_line1_pts;
+      ros::Publisher m_pub_line2;
+      ros::Publisher m_pub_line2_pts;
+
       ros::Publisher m_pub_plane_dbg;
       ros::Publisher m_pub_plane_dbg2;
       ros::Publisher m_pub_used_pts;
@@ -255,6 +276,7 @@ namespace balloon_filter
 
       ros::Timer m_main_loop_timer;
       ros::Timer m_rheiv_loop_timer;
+      ros::Timer m_linefit_loop_timer;
       ros::Timer m_prediction_loop_timer;
       ros::Timer m_safety_area_init_timer;
       //}
@@ -290,7 +312,21 @@ namespace balloon_filter
       
       //}
 
-      // | ------------ Circle fitting related variables ------------ |
+      // | ----------------- Line fitting variables ----------------- |
+
+      std::mutex m_linefit_data_mtx;
+      std::vector<pose_stamped_t> m_linefit_pose_stampeds;
+      /* bool m_linefit_new_data; */
+      void add_linefit_data(const pose_t& pose, const ros::Time& stamp)
+      {
+        std::scoped_lock lck(m_linefit_data_mtx);
+        m_linefit_pose_stampeds.push_back({pose, float((stamp-m_start_time).toSec())});
+        /* m_rheiv_last_data_update = ros::Time::now(); */
+        /* m_linefit_new_data = true; */
+      };
+
+      using pt_XYZt_t = pcl::PointXYZI;
+      using pc_XYZt_t = pcl::PointCloud<pt_XYZt_t>;
 
       /*  //{ */
 
@@ -343,6 +379,7 @@ namespace balloon_filter
       /* using prev_measurements_t = boost::circular_buffer<prev_measurement_t>; */
       /* prev_measurements_t m_prev_measurements; */
       std::shared_ptr<mrs_lib::SafetyZone> m_safety_area;
+      ros::Time m_start_time;
 
     private:
 
@@ -404,8 +441,12 @@ namespace balloon_filter
       void reset_lkf_estimate();
       //}
 
-      /* Circle fitting related methods //{ */
+      /* line fitting related methods //{ */
       
+      pos_t to_eigen(const pt_XYZt_t& pt);
+      void transform_pcl(pc_XYZt_t::Ptr pcl, const Eigen::Quaternionf& quat, const Eigen::Vector3f trans);
+      void sort_pcl(pc_XYZt_t::Ptr pcl);
+      float estimate_line_orientation(pc_XYZt_t::Ptr points, const line3d_t& line);
       void reset_circle_estimate();
       
       //}

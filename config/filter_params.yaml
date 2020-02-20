@@ -4,21 +4,23 @@ max_time_since_update: 666.0 # seconds
 min_updates_to_confirm: 8
 
 ball_wire_length: 1.45 # metres
-ball_speed1: 7.0 # metres per second
-ball_speed2: 7.0 # metres per second
+ball_speed1: 8.0 # metres per second
+ball_speed2: 8.0 # metres per second
 ball_speed_change_after: 480.0 # seconds (480s is 8min)
 
-line:
-  threshold_distance: 1.0 # point must lie within this distance from the line to be considered inlier during fitting
+linefit:
+  fitting_period: 1.0 # seconds
+  threshold_distance: 1.5 # point must lie within this distance from the line to be considered inlier during fitting
+  min_points: 10
 
 circle:
   min_radius: 2.5 # fitted (RANSAC) or estimated (UKF) circles with radius smaller than this will be discarded
-  max_radius: 28  # fitted circles with radius larger than this will be discarded
+  max_radius: 20  # fitted circles with radius larger than this will be discarded
   fit_threshold_distance: 1.0 # point must lie within this distance from the circle to be considered inlier during fitting
   snap_threshold_distance: 3.0 # point must lie within this distance from the circle to be considered inlier during curvature snapping
 
 lkf:
-  use_acceleration: true # whether to include acceleration in the system model
+  use_acceleration: false # whether to include acceleration in the system model
   min_init_points: 5
   max_speed_err: 3.5 # metre per second
   prediction_horizon: 4.0 # seconds
@@ -33,6 +35,20 @@ lkf:
   init_std:
     velocity: 0.5
     acceleration: 0.5
+
+rheiv:
+  fitting_period: 0.5 # seconds
+  max_line_points_ratio: 0.5
+  min_points: 10
+  max_points: 80
+  visualization_size: 20 # metres
+  timeout: 1.0 # seconds
+  line_threshold_distance: 1.0 # point must lie within this distance from the line to be considered inlier during fitting
+
+bounds: # measurements outside these bounds will be ignored
+  z:
+    min: 5  # metres
+    max: 15 # metres
 
 ukf:
   prediction_horizon: 4.0 # seconds
@@ -51,16 +67,3 @@ ukf:
   init_std:
     yaw: 2.0
     curvature: 2.0
-
-bounds: # measurements outside these bounds will be ignored
-  z:
-    min: 5  # metres
-    max: 15 # metres
-
-rheiv:
-  fitting_period: 0.5 # seconds
-  max_line_points_ratio: 0.5
-  min_points: 10
-  max_points: 80
-  visualization_size: 20 # metres
-  timeout: 1.0 # seconds

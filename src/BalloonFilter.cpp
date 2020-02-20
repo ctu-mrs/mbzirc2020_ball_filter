@@ -134,7 +134,7 @@ namespace balloon_filter
       {
         auto model_l = boost::make_shared<pcl::SampleConsensusModelLine<pt_XYZ_t>>(pointcloud);
         pcl::RandomSampleConsensus<pt_XYZ_t> fitter(model_l);
-        fitter.setDistanceThreshold(m_linefit_threshold_distance);
+        fitter.setDistanceThreshold(m_rheiv_line_threshold_distance);
         fitter.computeModel();
         fitter.getModelCoefficients(line_params);
         std::vector<int> inliers;
@@ -202,19 +202,19 @@ namespace balloon_filter
         //}
       }  // if (well_conditioned)
       // otherwise display the line fit to the user if no previous fit is available to be used
-      else if (!m_rheiv_theta_valid)
-      {
-        if (m_pub_plane_dbg.getNumSubscribers() > 0)
-        {
-          std::string txt = "ratio: " + std::to_string(line_pts_ratio);
-          line3d_t line;
-          line.origin = line_params.block<3, 1>(0, 0).cast<double>();
-          line.direction = 100.0*line_params.block<3, 1>(3, 0).cast<double>();
-          line.origin -= line.direction/2.0;
-          line.radius = m_linefit_threshold_distance;
-          m_pub_plane_dbg.publish(line_visualization(line, header, txt));
-        }
-      }
+      /* else if (!m_rheiv_theta_valid) */
+      /* { */
+      /*   if (m_pub_plane_dbg.getNumSubscribers() > 0) */
+      /*   { */
+      /*     std::string txt = "ratio: " + std::to_string(line_pts_ratio); */
+      /*     line3d_t line; */
+      /*     line.origin = line_params.block<3, 1>(0, 0).cast<double>(); */
+      /*     line.direction = 100.0*line_params.block<3, 1>(3, 0).cast<double>(); */
+      /*     line.origin -= line.direction/2.0; */
+      /*     line.radius = m_linefit_threshold_distance; */
+      /*     m_pub_plane_dbg.publish(line_visualization(line, header, txt)); */
+      /*   } */
+      /* } */
 
       if (success)
       {
@@ -319,6 +319,180 @@ namespace balloon_filter
   }
   //}
 
+  /* linefit_loop() method //{ */
+  void BalloonFilter::linefit_loop([[maybe_unused]] const ros::TimerEvent& evt)
+  {
+    if (!m_is_initialized)
+      return;
+
+    const auto [plane_theta_valid, plane_theta] = get_mutexed(m_rheiv_theta_mtx, m_rheiv_theta_valid, m_rheiv_theta);
+    if (!plane_theta_valid)
+      return;
+
+    // threadsafe copy the data to be fitted with the lines
+    const auto linefit_pose_stampeds = get_mutexed(m_linefit_data_mtx, m_linefit_pose_stampeds);
+
+    ros::Time stamp = ros::Time::now();
+    bool success = false;
+    rheiv::theta_t theta;
+    if (linefit_pose_stampeds.size() > (size_t)m_linefit_min_pts)
+    {
+      const vec3_t plane_normal = plane_theta.block<3, 1>(0, 0);
+      const float  plane_d = -plane_theta(3);
+      const quat_t plane_quat = quat_t::FromTwoVectors(plane_normal, vec3_t::UnitZ());
+      const quat_t plane_iquat = plane_quat.inverse();
+      const vec3_t plane_offset_pt = plane_normal * plane_d / (plane_normal.dot(plane_normal));
+
+      const auto plane_iquat_f = plane_iquat.cast<float>();
+      const auto plane_offset_pt_f = plane_offset_pt.cast<float>();
+
+      std_msgs::Header header;
+      header.frame_id = m_world_frame_id;
+      header.stamp = stamp;
+
+      pc_XYZt_t::Ptr pointcloud = boost::make_shared<pc_XYZt_t>();
+      pointcloud->reserve(linefit_pose_stampeds.size());
+      pcl_conversions::toPCL(header, pointcloud->header);
+      for (auto pose : linefit_pose_stampeds)
+      {
+        // transform the point to the plane
+        const auto pt = plane_quat * (pose.pose.pos - plane_offset_pt);
+        // add the point to the pointcloud
+        pt_XYZt_t pclpt;
+        pclpt.x = pt.x();
+        pclpt.y = pt.y();
+        /* pclpt.z = pt.z(); */
+        pclpt.z = 0.0;
+        pclpt.intensity = pose.stamp;
+        pointcloud->push_back(pclpt);
+      }
+
+      // | ------------------- Fit the first line ------------------- |
+
+      Eigen::VectorXf line1_params;
+      pcl::PointIndicesPtr line1_inliers = boost::make_shared<pcl::PointIndices>();
+      pc_XYZt_t::Ptr line1_points = boost::make_shared<pc_XYZt_t>();
+      line3d_t line1;
+      /*  //{ */
+
+      {
+        auto model_l = boost::make_shared<pcl::SampleConsensusModelLine<pt_XYZt_t>>(pointcloud);
+        pcl::RandomSampleConsensus<pt_XYZt_t> fitter(model_l);
+        fitter.setDistanceThreshold(m_linefit_threshold_distance);
+        fitter.computeModel();
+        fitter.getModelCoefficients(line1_params);
+        fitter.getInliers(line1_inliers->indices);
+
+        // extract inliers of line1
+        pcl::ExtractIndices<pt_XYZt_t> ei;
+        ei.setInputCloud(pointcloud);
+        ei.setIndices(line1_inliers);
+        ei.filter(*line1_points);
+
+        line1.origin = plane_iquat * line1_params.block<3, 1>(0, 0).cast<double>() + plane_offset_pt;
+        line1.direction = plane_iquat * (100.0*line1_params.block<3, 1>(3, 0).cast<double>());
+        line1.origin -= line1.direction/2.0;
+        line1.radius = 0.1;
+      }
+
+      //}
+
+      // | ------------------- Fit the second line ------------------ |
+
+      Eigen::VectorXf line2_params;
+      pcl::PointIndicesPtr line2_inliers = boost::make_shared<pcl::PointIndices>();
+      pc_XYZt_t::Ptr line2_points = boost::make_shared<pc_XYZt_t>();
+      line3d_t line2;
+      /*  //{ */
+
+      {
+        std::vector<uint8_t> line1_outlier_flags(pointcloud->size(), 1);
+        for (const auto l1in : line1_inliers->indices)
+          line1_outlier_flags.at(l1in) = 0;
+        // line1_outlier_flags[i] is 1 if pointcloud[i] is outlier, 0 else
+
+        pcl::PointIndicesPtr line1_outlier_inds = boost::make_shared<pcl::PointIndices>();
+        line1_outlier_inds->indices.reserve(pointcloud->size() - line1_inliers->indices.size());
+        for (int it = 0; (size_t)it < pointcloud->size(); it++)
+          if (line1_outlier_flags.at(it))
+            line1_outlier_inds->indices.push_back(it);
+        // line1_outlier_inds now contains indices of line1 outliers
+
+        // extract points which do not lie on line1
+        pc_XYZt_t::Ptr line1_outliers = boost::make_shared<pc_XYZt_t>();
+        pcl::ExtractIndices<pt_XYZt_t> ei;
+        ei.setInputCloud(pointcloud);
+        ei.setIndices(line1_outlier_inds);
+        ei.filter(*line1_outliers);
+
+        // fit a line to the remaining points
+        auto model_l = boost::make_shared<pcl::SampleConsensusModelLine<pt_XYZt_t>>(line1_outliers);
+        pcl::RandomSampleConsensus<pt_XYZt_t> fitter(model_l);
+        fitter.setDistanceThreshold(m_linefit_threshold_distance);
+        fitter.computeModel();
+        fitter.getModelCoefficients(line2_params);
+        fitter.getInliers(line2_inliers->indices);
+
+        // extract inliers of line2
+        ei.setInputCloud(line1_outliers);
+        ei.setIndices(line2_inliers);
+        ei.filter(*line2_points);
+
+        line2.origin = plane_iquat * line2_params.block<3, 1>(0, 0).cast<double>() + plane_offset_pt;
+        line2.direction = plane_iquat * (100.0*line2_params.block<3, 1>(3, 0).cast<double>());
+        line2.origin -= line2.direction/2.0;
+        line2.radius = 0.1;
+      }
+
+      //}
+
+      // only continue if both lines got enough inliers
+      if (line1_points->size() > (size_t)m_linefit_min_pts && line2_points->size() > (size_t)m_linefit_min_pts)
+      {
+        vec3_t line1_vel;
+        {
+          // transform the inliers back to 3D
+          transform_pcl(line1_points, plane_iquat_f, plane_offset_pt_f);
+          // sort the inliers by time
+          sort_pcl(line1_points);
+          const float line1_ori = estimate_line_orientation(line1_points, line1);
+          line1_vel = line1_ori*line1.direction.normalized()*ball_speed_at_time(stamp);
+        }
+
+        vec3_t line2_vel;
+        {
+          transform_pcl(line2_points, plane_iquat_f, plane_offset_pt_f);
+          // sort the inliers by time
+          sort_pcl(line2_points);
+          const float line2_ori = estimate_line_orientation(line2_points, line2);
+          line2_vel = line2_ori*line2.direction.normalized()*ball_speed_at_time(stamp);
+        }
+
+        success = true;
+      }
+
+      if (success)
+      {
+        {
+          const std::string txt = "LINE1";
+          m_pub_line1.publish(line_visualization(line1, header, txt));
+          m_pub_line1_pts.publish(line1_points);
+        }
+
+        {
+          const std::string txt = "LINE2";
+          m_pub_line2.publish(line_visualization(line2, header, txt));
+          m_pub_line2_pts.publish(line2_points);
+        }
+      }
+    } else  // if (rheiv_pts.size() > (size_t)m_rheiv_min_pts)
+    {
+      // Still waiting for enough points to fit the plane through.
+      ROS_WARN_STREAM_THROTTLE(MSG_THROTTLE, "[LINEFIT]: Not enough points to fit line (" << linefit_pose_stampeds.size() << "/ " << m_linefit_min_pts << ").");
+    }
+  }
+  //}
+
   /* prediction_loop() method //{ */
   void BalloonFilter::prediction_loop([[maybe_unused]] const ros::TimerEvent& evt)
   {
@@ -393,11 +567,18 @@ namespace balloon_filter
       return;
     }
 
-    pose_cov_t det_pose;
-    det_pose.pos_cov.pos.x() = msg.pose.pose.position.x;
-    det_pose.pos_cov.pos.y() = msg.pose.pose.position.y;
-    det_pose.pos_cov.pos.z() = msg.pose.pose.position.z;
-    det_pose.pos_cov.cov = msg2cov(msg.pose.covariance);
+
+    pos_t pos;
+    pos.x() = msg.pose.pose.position.x;
+    pos.y() = msg.pose.pose.position.y;
+    pos.z() = msg.pose.pose.position.z;
+
+    pose_t det_pose;
+    det_pose.pos = pos;
+
+    pose_cov_t det_pose_cov;
+    det_pose_cov.pos_cov.pos = pos;
+    det_pose_cov.pos_cov.cov = msg2cov(msg.pose.covariance);
 
     // check if the direction covariance is sufficiently low to use it
     if (msg.pose.covariance.at(6*6-1) < M_PI_2)
@@ -407,52 +588,27 @@ namespace balloon_filter
       quat.x() = msg.pose.pose.orientation.x;
       quat.y() = msg.pose.pose.orientation.y;
       quat.z() = msg.pose.pose.orientation.z;
+
+      det_pose.quat = quat;
+
       const cov_t ypr_cov = msg2cov(msg.pose.covariance, 3);
-      det_pose.ori_cov = {quat, ypr_cov};
+      det_pose_cov.ori_cov = {quat, ypr_cov};
     }
 
-    add_rheiv_data(det_pose.pos_cov.pos, det_pose.pos_cov.cov, msg.header.stamp);
+    add_linefit_data(det_pose, msg.header.stamp);
+    add_rheiv_data(det_pose_cov.pos_cov.pos, det_pose_cov.pos_cov.cov, msg.header.stamp);
 
-    // copy the latest plane fit
-    const auto [plane_theta_valid, plane_theta] = get_mutexed(m_rheiv_theta_mtx, m_rheiv_theta_valid, m_rheiv_theta);
+    /* // copy the latest plane fit */
+    /* const auto [plane_theta_valid, plane_theta] = get_mutexed(m_rheiv_theta_mtx, m_rheiv_theta_valid, m_rheiv_theta); */
 
-    /* update the UKF if possible //{ */
-
-    // check if we have all data that is needed
-    if (plane_theta_valid)
-    {
-      /* update the UKF //{ */
-
-      if (m_ukf_estimate_exists)
-      {
-        update_ukf_estimate(det_pose, msg.header.stamp, plane_theta);
-      } else
-      {
-        init_ukf_estimate(msg.header.stamp, plane_theta);
-      }
-
-      //}
-
-      const auto [circle_valid, circle3d] = get_mutexed(m_circle_mtx, m_circle_valid, m_circle);
-      // if we have a fitted circle, use it to correct the UKF estimated curvature
-      if (circle_valid)
-        update_ukf_estimate(circle3d, plane_theta);
-
-    } else
-    {
-      if (!plane_theta_valid)
-      {
-        ROS_WARN_STREAM_THROTTLE(MSG_THROTTLE, "[UKF] RHEIV plane theta estimate unavailable, cannot update UKF!");
-      }
-    }  // if (!measurements.empty() && plane_theta_valid)
-
-    //}
+    /* if (plane_theta_valid) */
+    /*   const auto [line1, line2] = fit_lines(m_poses, plane_theta); */
 
     /* update the LKF //{ */
 
     if (m_lkf_estimate_exists)
     {
-      update_lkf_estimate(det_pose, msg.header.stamp);
+      update_lkf_estimate(det_pose_cov, msg.header.stamp);
     } else
     {
       init_lkf_estimate(msg.header.stamp);
@@ -1163,6 +1319,42 @@ namespace balloon_filter
   // --------------------------------------------------------------
   // |               Circle fitting related methods               |
   // --------------------------------------------------------------
+
+  void BalloonFilter::transform_pcl(pc_XYZt_t::Ptr pcl, const Eigen::Quaternionf& quat, const Eigen::Vector3f trans)
+  {
+    for (auto& pt : pcl->points)
+      pt.getVector3fMap() = quat * pt.getVector3fMap() + trans;
+  }
+
+  void BalloonFilter::sort_pcl(pc_XYZt_t::Ptr pcl)
+  {
+    std::sort(std::begin(pcl->points), std::end(pcl->points),
+              // comparison lambda function
+              [](const pt_XYZt_t& a, const pt_XYZt_t& b) { return a.intensity < b.intensity; });
+  }
+
+  pos_t BalloonFilter::to_eigen(const pt_XYZt_t& pt)
+  {
+    return {pt.x, pt.y, pt.z};
+  }
+
+  float BalloonFilter::estimate_line_orientation(pc_XYZt_t::Ptr points, const line3d_t& line)
+  {
+    const vec3_t line_dir = line.direction;
+    std::vector<float> orientations;
+    orientations.reserve(points->size());
+    const pos_t prev_pt = to_eigen(points->points.front());
+    for (int it = 1; (size_t)it < points->size(); it++)
+    {
+      const pos_t cur_pt = to_eigen(points->at(it));
+      const vec3_t cur_vel = cur_pt - prev_pt;
+      const float cur_ori = cur_vel.dot(line_dir);
+      orientations.push_back(cur_ori);
+    }
+    auto median_it = std::begin(orientations) + orientations.size()/2;
+    std::nth_element(std::begin(orientations), median_it , std::end(orientations));
+    return mrs_lib::sign(*median_it);
+  }
 
   /* reset_circle_estimate() method //{ */
   void BalloonFilter::reset_circle_estimate()
@@ -1913,7 +2105,9 @@ namespace balloon_filter
     pl.load_param("ball_speed2", m_ball_speed2);
     pl.load_param("ball_wire_length", m_ball_wire_length);
 
-    pl.load_param("line/threshold_distance", m_linefit_threshold_distance);
+    pl.load_param("linefit/threshold_distance", m_linefit_threshold_distance);
+    pl.load_param("linefit/fitting_period", m_linefit_fitting_period);
+    pl.load_param("linefit/min_points", m_linefit_min_pts);
 
     pl.load_param("circle/max_radius", m_circle_max_radius);
     pl.load_param("circle/fit_threshold_distance", m_circle_fit_threshold_distance);
@@ -1923,6 +2117,7 @@ namespace balloon_filter
     // TODO: set the time in some smarter manner
     m_ball_speed_change = ros::Time::now() + ball_speed_change_after;
     pl.load_param("rheiv/fitting_period", m_rheiv_fitting_period);
+    pl.load_param("rheiv/line_threshold_distance", m_rheiv_line_threshold_distance);
     pl.load_param("rheiv/max_line_points_ratio", m_rheiv_max_line_pts_ratio);
     pl.load_param("rheiv/max_points", m_rheiv_max_pts);
     pl.load_param("rheiv/visualization_size", m_rheiv_visualization_size);
@@ -1994,6 +2189,11 @@ namespace balloon_filter
     m_pub_chosen_meas = nh.advertise<balloon_filter::BallLocation>("chosen_measurement", 1);
     m_pub_chosen_meas_dbg = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("chosen_measurement_dbg", 1);
 
+    m_pub_line1 = nh.advertise<visualization_msgs::MarkerArray>("fitted_line1_marker", 1);
+    m_pub_line1_pts = nh.advertise<sensor_msgs::PointCloud2>("fitted_line1_points", 1);
+    m_pub_line2 = nh.advertise<visualization_msgs::MarkerArray>("fitted_line2_marker", 1);
+    m_pub_line2_pts = nh.advertise<sensor_msgs::PointCloud2>("fitted_line2_points", 1);
+
     m_pub_plane_dbg = nh.advertise<visualization_msgs::MarkerArray>("fitted_plane_marker", 1);
     m_pub_plane_dbg2 = nh.advertise<geometry_msgs::PoseStamped>("fitted_plane_pose", 1);
     m_pub_used_pts = nh.advertise<sensor_msgs::PointCloud2>("fit_points", 1);
@@ -2057,8 +2257,20 @@ namespace balloon_filter
     }
     //}
 
-    /* m_prev_measurements.set_capacity(measurements_buffer_length); */
+    /* initialize line fitting //{ */
+    
+    {
+      /* m_linefit_new_data = false; */
+      /* m_prev_measurements.set_capacity(measurements_buffer_length); */
+      constexpr int mission_duration = 15; // minutes
+      constexpr int sensor_rate = 10;      // Hz
+      m_linefit_pose_stampeds.reserve(mission_duration*60*sensor_rate);
+    }
+    
+    //}
+
     reset_estimates();
+    m_start_time = ros::Time::now();
     if (m_safety_area_initialized)
       m_is_initialized = true;
 
@@ -2066,6 +2278,7 @@ namespace balloon_filter
 
     m_main_loop_timer = nh.createTimer(ros::Duration(processing_period), &BalloonFilter::main_loop, this);
     m_rheiv_loop_timer = nh.createTimer(ros::Duration(m_rheiv_fitting_period), &BalloonFilter::rheiv_loop, this);
+    m_linefit_loop_timer = nh.createTimer(ros::Duration(m_linefit_fitting_period), &BalloonFilter::linefit_loop, this);
     m_prediction_loop_timer = nh.createTimer(ros::Duration(prediction_period), &BalloonFilter::prediction_loop, this);
 
     //}
