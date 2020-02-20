@@ -369,13 +369,14 @@ namespace balloon_filter
 
       // | ------------------- Fit the first line ------------------- |
 
-      Eigen::VectorXf line1_params;
+      // note that the resulting values will already be transformed back to world
       pcl::PointIndicesPtr line1_inliers = boost::make_shared<pcl::PointIndices>();
       pc_XYZt_t::Ptr line1_points = boost::make_shared<pc_XYZt_t>();
       line3d_t line1;
       /*  //{ */
 
       {
+        Eigen::VectorXf line1_params;
         auto model_l = boost::make_shared<pcl::SampleConsensusModelLine<pt_XYZt_t>>(pointcloud);
         pcl::RandomSampleConsensus<pt_XYZt_t> fitter(model_l);
         fitter.setDistanceThreshold(m_linefit_threshold_distance);
@@ -390,22 +391,25 @@ namespace balloon_filter
         ei.filter(*line1_points);
 
         line1.origin = plane_iquat * line1_params.block<3, 1>(0, 0).cast<double>() + plane_offset_pt;
-        line1.direction = plane_iquat * (100.0*line1_params.block<3, 1>(3, 0).cast<double>());
-        line1.origin -= line1.direction/2.0;
+        line1.direction = plane_iquat * line1_params.block<3, 1>(3, 0).cast<double>();
         line1.radius = 0.1;
+
+        // transform the inliers back to 3D
+        transform_pcl(line1_points, plane_iquat_f, plane_offset_pt_f);
       }
 
       //}
 
       // | ------------------- Fit the second line ------------------ |
 
-      Eigen::VectorXf line2_params;
+      // note that the resulting values will already be transformed back to world
       pcl::PointIndicesPtr line2_inliers = boost::make_shared<pcl::PointIndices>();
       pc_XYZt_t::Ptr line2_points = boost::make_shared<pc_XYZt_t>();
       line3d_t line2;
       /*  //{ */
 
       {
+        Eigen::VectorXf line2_params;
         std::vector<uint8_t> line1_outlier_flags(pointcloud->size(), 1);
         for (const auto l1in : line1_inliers->indices)
           line1_outlier_flags.at(l1in) = 0;
@@ -439,34 +443,44 @@ namespace balloon_filter
         ei.filter(*line2_points);
 
         line2.origin = plane_iquat * line2_params.block<3, 1>(0, 0).cast<double>() + plane_offset_pt;
-        line2.direction = plane_iquat * (100.0*line2_params.block<3, 1>(3, 0).cast<double>());
-        line2.origin -= line2.direction/2.0;
+        line2.direction = plane_iquat * line2_params.block<3, 1>(3, 0).cast<double>();
         line2.radius = 0.1;
+
+        // transform the inliers back to 3D
+        transform_pcl(line2_points, plane_iquat_f, plane_offset_pt_f);
       }
 
       //}
 
+      line3d_t chosen_line;
       // only continue if both lines got enough inliers
       if (line1_points->size() > (size_t)m_linefit_min_pts && line2_points->size() > (size_t)m_linefit_min_pts)
       {
         vec3_t line1_vel;
         {
-          // transform the inliers back to 3D
-          transform_pcl(line1_points, plane_iquat_f, plane_offset_pt_f);
           // sort the inliers by time
           sort_pcl(line1_points);
           const float line1_ori = estimate_line_orientation(line1_points, line1);
           line1_vel = line1_ori*line1.direction.normalized()*ball_speed_at_time(stamp);
+          line1.direction = line1_vel;
         }
 
         vec3_t line2_vel;
         {
-          transform_pcl(line2_points, plane_iquat_f, plane_offset_pt_f);
           // sort the inliers by time
           sort_pcl(line2_points);
           const float line2_ori = estimate_line_orientation(line2_points, line2);
           line2_vel = line2_ori*line2.direction.normalized()*ball_speed_at_time(stamp);
+          line2.direction = line2_vel;
         }
+
+        line1 = constrain_line_to_pts(line1, line1_points);
+        line2 = constrain_line_to_pts(line2, line2_points);
+
+        if (line1.direction.norm() > line2.direction.norm())
+          chosen_line = line1;
+        else
+          chosen_line = line2;
 
         success = true;
       }
@@ -474,13 +488,17 @@ namespace balloon_filter
       if (success)
       {
         {
-          const std::string txt = "LINE1";
+          std::string txt = "LINE1";
+          if (line1 == chosen_line)
+            txt = "CHOSEN LINE";
           m_pub_line1.publish(line_visualization(line1, header, txt));
           m_pub_line1_pts.publish(line1_points);
         }
 
         {
-          const std::string txt = "LINE2";
+          std::string txt = "LINE2";
+          if (line2 == chosen_line)
+            txt = "CHOSEN LINE";
           m_pub_line2.publish(line_visualization(line2, header, txt));
           m_pub_line2_pts.publish(line2_points);
         }
@@ -1326,6 +1344,12 @@ namespace balloon_filter
       pt.getVector3fMap() = quat * pt.getVector3fMap() + trans;
   }
 
+  void BalloonFilter::transform_line(line3d_t& line, const quat_t& quat, const vec3_t& trans)
+  {
+    line.origin = quat*line.origin + trans;
+    line.direction = quat*line.direction;
+  }
+
   void BalloonFilter::sort_pcl(pc_XYZt_t::Ptr pcl)
   {
     std::sort(std::begin(pcl->points), std::end(pcl->points),
@@ -1354,6 +1378,27 @@ namespace balloon_filter
     auto median_it = std::begin(orientations) + orientations.size()/2;
     std::nth_element(std::begin(orientations), median_it , std::end(orientations));
     return mrs_lib::sign(*median_it);
+  }
+
+  line3d_t BalloonFilter::constrain_line_to_pts(const line3d_t& line, pc_XYZt_t::Ptr points)
+  {
+    std::vector<float> dists;
+    dists.reserve(points->size());
+    const vec3_t line_dir = line.direction.normalized();
+    for (const auto& pt : points->points)
+    {
+      const pos_t cur_pt = to_eigen(pt);
+      const float cur_dist = line_dir.dot(line.origin - cur_pt);
+      dists.push_back(cur_dist);
+    }
+    const auto [mindist_it, maxdist_it] = std::minmax_element(std::begin(dists), std::end(dists));
+    const pos_t start = line.origin + (*mindist_it)*line_dir;
+    const pos_t end = line.origin + (*maxdist_it)*line_dir;
+    const vec3_t dir = end-start;
+    line3d_t ret = line;
+    ret.origin = start;
+    ret.direction = dir;
+    return ret;
   }
 
   /* reset_circle_estimate() method //{ */
@@ -1426,24 +1471,26 @@ namespace balloon_filter
     /* lines (the line itself) //{ */
   
     {
-      const quat_t quat = quat_t::FromTwoVectors(pos_t::UnitZ(), line.direction);
       visualization_msgs::Marker linem;
       linem.id = 2;
       linem.header = header;
-      linem.type = visualization_msgs::Marker::CYLINDER;
+      linem.type = visualization_msgs::Marker::ARROW;
       linem.color.a = 0.8;
       linem.color.b = 1.0;
-      linem.scale.x = line.radius;
-      linem.scale.y = line.radius;
-      linem.scale.z = line.direction.norm();
+      linem.scale.x = 0.1;
+      linem.scale.y = 0.5;
+      linem.scale.z = 1.0;
       linem.ns = "line";
-      linem.pose.orientation.w = quat.w();
-      linem.pose.orientation.x = quat.x();
-      linem.pose.orientation.y = quat.y();
-      linem.pose.orientation.z = quat.z();
-      linem.pose.position.x = center.x();
-      linem.pose.position.y = center.y();
-      linem.pose.position.z = center.z();
+      linem.pose.orientation.w = 1.0;
+      geometry_msgs::Point pt;
+      pt.x = line.origin.x();
+      pt.y = line.origin.y();
+      pt.z = line.origin.z();
+      linem.points.push_back(pt);
+      pt.x += line.direction.x();
+      pt.y += line.direction.y();
+      pt.z += line.direction.z();
+      linem.points.push_back(pt);
       ret.markers.push_back(linem);
     }
   

@@ -150,6 +150,10 @@ namespace balloon_filter
     Eigen::Vector3d origin;
     Eigen::Vector3d direction;
     double radius; // thickness of the line
+    bool operator==(const line3d_t& other)
+    {
+      return origin == other.origin && direction == other.direction && radius == other.radius;
+    }
   };
 
   using mrs_lib::get_mutexed;
@@ -445,8 +449,10 @@ namespace balloon_filter
       
       pos_t to_eigen(const pt_XYZt_t& pt);
       void transform_pcl(pc_XYZt_t::Ptr pcl, const Eigen::Quaternionf& quat, const Eigen::Vector3f trans);
+      void transform_line(line3d_t& line, const quat_t& quat, const vec3_t& trans);
       void sort_pcl(pc_XYZt_t::Ptr pcl);
       float estimate_line_orientation(pc_XYZt_t::Ptr points, const line3d_t& line);
+      line3d_t constrain_line_to_pts(const line3d_t& line, pc_XYZt_t::Ptr points);
       void reset_circle_estimate();
       
       //}
