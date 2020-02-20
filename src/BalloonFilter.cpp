@@ -390,12 +390,9 @@ namespace balloon_filter
         ei.setIndices(line1_inliers);
         ei.filter(*line1_points);
 
-        line1.origin = plane_iquat * line1_params.block<3, 1>(0, 0).cast<double>() + plane_offset_pt;
-        line1.direction = plane_iquat * line1_params.block<3, 1>(3, 0).cast<double>();
+        line1.origin = line1_params.block<3, 1>(0, 0).cast<double>();
+        line1.direction = line1_params.block<3, 1>(3, 0).cast<double>();
         line1.radius = 0.1;
-
-        // transform the inliers back to 3D
-        transform_pcl(line1_points, plane_iquat_f, plane_offset_pt_f);
       }
 
       //}
@@ -442,12 +439,9 @@ namespace balloon_filter
         ei.setIndices(line2_inliers);
         ei.filter(*line2_points);
 
-        line2.origin = plane_iquat * line2_params.block<3, 1>(0, 0).cast<double>() + plane_offset_pt;
-        line2.direction = plane_iquat * line2_params.block<3, 1>(3, 0).cast<double>();
+        line2.origin = line2_params.block<3, 1>(0, 0).cast<double>();
+        line2.direction = line2_params.block<3, 1>(3, 0).cast<double>();
         line2.radius = 0.1;
-
-        // transform the inliers back to 3D
-        transform_pcl(line2_points, plane_iquat_f, plane_offset_pt_f);
       }
 
       //}
@@ -476,6 +470,13 @@ namespace balloon_filter
 
         line1 = constrain_line_to_pts(line1, line1_points);
         line2 = constrain_line_to_pts(line2, line2_points);
+
+        // transform the inliers back to 3D
+        transform_pcl(line1_points, plane_iquat_f, plane_offset_pt_f);
+        transform_pcl(line2_points, plane_iquat_f, plane_offset_pt_f);
+
+        transform_line(line1, plane_iquat, plane_offset_pt);
+        transform_line(line2, plane_iquat, plane_offset_pt);
 
         if (line1.direction.norm() > line2.direction.norm())
           chosen_line = line1;
@@ -1388,7 +1389,7 @@ namespace balloon_filter
     for (const auto& pt : points->points)
     {
       const pos_t cur_pt = to_eigen(pt);
-      const float cur_dist = line_dir.dot(line.origin - cur_pt);
+      const float cur_dist = line_dir.dot(cur_pt - line.origin);
       dists.push_back(cur_dist);
     }
     const auto [mindist_it, maxdist_it] = std::minmax_element(std::begin(dists), std::end(dists));
