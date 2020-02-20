@@ -1368,13 +1368,14 @@ namespace balloon_filter
     const vec3_t line_dir = line.direction;
     std::vector<float> orientations;
     orientations.reserve(points->size());
-    const pos_t prev_pt = to_eigen(points->points.front());
+    pos_t prev_pt = to_eigen(points->points.front());
     for (int it = 1; (size_t)it < points->size(); it++)
     {
       const pos_t cur_pt = to_eigen(points->at(it));
       const vec3_t cur_vel = cur_pt - prev_pt;
       const float cur_ori = cur_vel.dot(line_dir);
       orientations.push_back(cur_ori);
+      prev_pt = cur_pt;
     }
     auto median_it = std::begin(orientations) + orientations.size()/2;
     std::nth_element(std::begin(orientations), median_it , std::end(orientations));
