@@ -413,7 +413,9 @@ namespace balloon_filter
             chosen_line = line1;
           else
             chosen_line = line2;
-          const double upd_ang = std::acos(prev_dir.dot(chosen_line.direction.normalized()));
+          const double upd_ang = std::acos(std::clamp(prev_dir.dot(chosen_line.direction.normalized()), -1.0, 0.0));
+          if (std::isnan(upd_ang))
+            ROS_INFO_THROTTLE(MSG_THROTTLE, "POSRALO SE TO");
           ROS_INFO_THROTTLE(MSG_THROTTLE, "[LINEFIT]: Updating chosen line with a new fit (angle: %.2f).", upd_ang);
         }
         else
@@ -1230,7 +1232,7 @@ namespace balloon_filter
     const vec3_t plane_normal = plane_theta.block<3, 1>(0, 0);
     const float  plane_d = -plane_theta(3);
     const quat_t quat = quat_t::FromTwoVectors(vec3_t::UnitZ(), plane_normal);
-    const vec3_t pos = - plane_normal * plane_d / (plane_normal.dot(plane_normal));
+    const vec3_t pos = plane_normal * plane_d / (plane_normal.dot(plane_normal));
 
     const double size = m_rheiv_visualization_size;
     geometry_msgs::Point ptA;
@@ -1404,8 +1406,10 @@ namespace balloon_filter
   {
     geometry_msgs::PoseStamped ret;
 
-    const auto pos = plane_origin(plane_theta, {0,0,0});
-    const auto quat = plane_orientation(plane_theta);
+    const vec3_t plane_normal = plane_theta.block<3, 1>(0, 0);
+    const float  plane_d = -plane_theta(3);
+    const quat_t quat = quat_t::FromTwoVectors(vec3_t::UnitZ(), plane_normal);
+    const vec3_t pos = plane_normal * plane_d / (plane_normal.dot(plane_normal));
 
     ret.header = header;
     ret.pose.position.x = pos.x();

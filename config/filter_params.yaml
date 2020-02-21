@@ -45,7 +45,7 @@ rheiv:
   max_line_points_ratio: 0.65
   min_points: 10
   max_points: 80
-  visualization_size: 20 # metres
+  visualization_size: 100 # metres
   timeout: 1.0 # seconds
   line_threshold_distance: 1.0 # point must lie within this distance from the line to be considered inlier during fitting
   snap_distance: 2.0 # metres
