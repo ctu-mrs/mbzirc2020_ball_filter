@@ -24,6 +24,7 @@
 #include <sensor_msgs/PointCloud2.h>
 #include <sensor_msgs/point_cloud2_iterator.h>
 #include <mrs_msgs/Float64Stamped.h>
+#include <std_msgs/Float64.h>
 
 // MRS stuff
 #include <mrs_lib/Profiler.h>
@@ -207,6 +208,7 @@ namespace balloon_filter
       double m_linefit_back_up;
       double m_linefit_snap_dist;
       double m_linefit_snap_ang;
+      ros::Duration m_linefit_max_pt_age;
 
       double m_rheiv_fitting_period;
       double m_rheiv_line_threshold_distance;
@@ -225,14 +227,6 @@ namespace balloon_filter
 
       double m_circle_min_radius;
       double m_circle_max_radius;
-
-      ros::Duration m_ukf_init_history_duration;
-      UKF::x_t m_ukf_process_std;
-      UKF::x_t m_ukf_init_std;
-      double m_ukf_meas_std_curv_circ;
-      double m_ukf_meas_std_curv_line;
-      double m_ukf_prediction_horizon;
-      double m_ukf_prediction_step;
 
       bool m_lkf_use_acceleration;
       int m_lkf_n_states;
@@ -284,6 +278,8 @@ namespace balloon_filter
       ros::Publisher m_pub_prediction;
       ros::Publisher m_pub_pred_path_dbg;
 
+      ros::Publisher m_pub_gt_ball_speed;
+
       ros::ServiceServer m_reset_estimates_server;
 
       ros::Timer m_main_loop_timer;
@@ -326,6 +322,8 @@ namespace balloon_filter
 
       // | ----------------- Line fitting variables ----------------- |
 
+      /*  //{ */
+      
       std::mutex m_linefit_data_mtx;
       std::vector<pose_stamped_t> m_linefit_pose_stampeds;
       /* bool m_linefit_new_data; */
@@ -336,22 +334,10 @@ namespace balloon_filter
         /* m_rheiv_last_data_update = ros::Time::now(); */
         /* m_linefit_new_data = true; */
       };
-
+      
       std::mutex m_linefit_mtx;
       bool m_linefit_valid;
       line3d_t m_linefit;
-
-      // | ------------------ UKF related variables ----------------- |
-
-      /*  //{ */
-      
-      std::mutex m_ukf_mtx;
-      UKF m_ukf;
-      std::mutex m_ukf_estimate_mtx;
-      bool m_ukf_estimate_exists;
-      UKF::statecov_t m_ukf_estimate;
-      ros::Time m_ukf_last_update;
-      int m_ukf_n_updates;
       
       //}
 
@@ -407,7 +393,6 @@ namespace balloon_filter
       quat_t plane_orientation(const theta_t& plane_theta);
       double plane_angle(const theta_t& plane1, const theta_t& plane2);
       pos_t plane_origin(const theta_t& plane_theta, const pos_t& origin);
-      UKF::u_t construct_u(const theta_t& plane_theta, const double speed);
       double ball_speed_at_time(const ros::Time& timestamp);
       std::tuple<pos_cov_t, double> find_most_likely_association(const pos_cov_t& prev_pt, const std::vector<pos_cov_t>& measurements, const double expected_speed, const double dt, const double cov_inflation);
       std::optional<std::pair<pos_cov_t, pos_cov_t>> find_speed_compliant_measurement(const std::vector<pos_cov_t>& prev_meass, const std::vector<pos_cov_t>& measurements, const double expected_speed, const double dt, const double loglikelihood_threshold, const double cov_inflation);
@@ -417,15 +402,6 @@ namespace balloon_filter
       rheiv::theta_t fit_plane(const boost::circular_buffer<pos_t>& points, const boost::circular_buffer<cov_t>& covs);
       void reset_rheiv_estimate();
       
-      //}
-
-      /* UKF related methods //{ */
-      UKF::statecov_t predict_ukf_estimate(const UKF::statecov_t& lkf_estimate, const double dt, const theta_t& plane_theta, const double ball_speed);
-      void update_ukf_estimate(const pose_cov_t& measurement, const ros::Time& stamp, const theta_t& plane_theta);
-      std::optional<UKF::statecov_t> estimate_ukf_initial_state(const theta_t& plane_theta);
-      void init_ukf_estimate(const ros::Time& stamp, const theta_t& plane_theta);
-      std::vector<std::pair<UKF::x_t, ros::Time>> predict_ukf_states(const UKF::statecov_t initial_statecov, const ros::Time& initial_timestamp, const theta_t& plane_theta, const double prediction_horizon, const double prediction_step);
-      void reset_ukf_estimate();
       //}
 
       /* LKF related methods //{ */
@@ -458,7 +434,7 @@ namespace balloon_filter
 
       balloon_filter::BallLocation to_output_message(const pos_cov_t& estimate, const std_msgs::Header& header);
       geometry_msgs::PoseWithCovarianceStamped to_output_message2(const pos_cov_t& estimate, const std_msgs::Header& header);
-      geometry_msgs::PoseStamped to_output_message2(const theta_t& plane_theta, const std_msgs::Header& header, const pos_t& origin);
+      geometry_msgs::PoseStamped to_output_message2(const theta_t& plane_theta, const std_msgs::Header& header);
       nav_msgs::Path to_output_message(const std::vector<std::pair<UKF::x_t, ros::Time>>& predictions, const std_msgs::Header& header, const theta_t& plane_theta);
       nav_msgs::Path to_output_message(const std::vector<std::pair<LKF::x_t, ros::Time>>& predictions, const std_msgs::Header& header);
       sensor_msgs::PointCloud2 to_output_message(const boost::circular_buffer<pos_t>& points, const std_msgs::Header& header);
@@ -467,7 +443,7 @@ namespace balloon_filter
       balloon_filter::UKFState to_output_message(const UKF::statecov_t& ukf_statecov);
       balloon_filter::Plane to_output_message(const rheiv::theta_t& plane_theta);
       visualization_msgs::MarkerArray line_visualization(const line3d_t& line, const std_msgs::Header& header, const std::string& text);
-      visualization_msgs::MarkerArray plane_visualization(const theta_t& plane_theta, const std_msgs::Header& header, const pos_t& origin);
+      visualization_msgs::MarkerArray plane_visualization(const theta_t& plane_theta, const std_msgs::Header& header);
 
       pos_t get_cur_mav_pos();
 

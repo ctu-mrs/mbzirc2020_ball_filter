@@ -5,16 +5,17 @@ min_updates_to_confirm: 8
 
 ball_wire_length: 1.45 # metres
 ball_speed1: 8.0 # metres per second
-ball_speed2: 8.0 # metres per second
+ball_speed2: 5.0 # metres per second
 ball_speed_change_after: 480.0 # seconds (480s is 8min)
 
 linefit:
   fitting_period: 0.2 # seconds
-  threshold_distance: 1.5 # point must lie within this distance from the line to be considered inlier during fitting
+  threshold_distance: 0.8 # point must lie within this distance from the line to be considered inlier during fitting
   min_points: 10
-  back_up: 4.0 # metres - how much to back up from the end of the line
+  back_up: 6.0 # metres - how much to back up from the end of the line
   snap_distance: 2.0 # metres
   snap_angle: 0.25 # radians
+  max_point_age: 90.0 # seconds
 
 circle:
   min_radius: 2.5 # fitted (RANSAC) or estimated (UKF) circles with radius smaller than this will be discarded

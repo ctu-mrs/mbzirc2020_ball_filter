@@ -7,6 +7,10 @@
   <arg name="WORLD_FILE" default="$(optenv WORLD_FILE)" />
   <arg name="WORLD_NAME" default="$(optenv WORLD_NAME)" />
 
+  <arg name="rosbag_remap" default="false" />
+  <arg unless="$(arg rosbag_remap)" name="suf" value=""/>
+  <arg     if="$(arg rosbag_remap)" name="suf" value="_"/>
+
   <arg unless="$(arg debug)" name="launch_prefix" value=""/>
   <arg     if="$(arg debug)" name="launch_prefix" value="debug_roslaunch"/>
 
@@ -35,18 +39,26 @@
       <rosparam file="$(arg world_file)" command="load" />
 
       <!-- Subscribers -->
-      <remap from="~localized_ball" to="uav_detection/detection" />
+      <remap from="~localized_ball" to="uav_detection/detection$(arg suf)" />
 
       <!-- Publishers -->
-      <remap from="~chosen_measurement" to="~chosen_measurement" />
-      <remap from="~chosen_measurement_dbg" to="~chosen_measurement_dbg" />
+      <remap from="~chosen_measurement" to="~chosen_measurement$(arg suf)" />
+      <remap from="~chosen_measurement_dbg" to="~chosen_measurement_dbg$(arg suf)" />
 
-      <remap from="~fitted_plane_marker" to="~fitted_plane_marker" />
-      <remap from="~fitted_plane_pose" to="~fitted_plane_pose" />
-      <remap from="~fit_points" to="~fit_points" />
-      <remap from="~fitted_plane" to="~fitted_plane" />
-      <remap from="~prediction" to="~prediction" />
-      <remap from="~predicted_path" to="~predicted_path" />
+      <remap from="~fitted_line1_marker" to="~fitted_line1_marker$(arg suf)" />
+      <remap from="~fitted_line1_points" to="~fitted_line1_points$(arg suf)" />
+      <remap from="~fitted_line2_marker" to="~fitted_line2_marker$(arg suf)" />
+      <remap from="~fitted_line2_points" to="~fitted_line2_points$(arg suf)" />
+      <remap from="~line_endpose" to="~line_endpose$(arg suf)" />
+
+      <remap from="~fitted_plane_marker" to="~fitted_plane_marker$(arg suf)" />
+      <remap from="~fitted_plane_pose" to="~fitted_plane_pose$(arg suf)" />
+      <remap from="~fit_points" to="~fit_points$(arg suf)" />
+      <remap from="~fitted_plane" to="~fitted_plane$(arg suf)" />
+      <remap from="~prediction" to="~prediction$(arg suf)" />
+      <remap from="~predicted_path" to="~predicted_path$(arg suf)" />
+
+      <remap from="~gt_ball_speed" to="~gt_ball_speed$(arg suf)" />
 
     </node>
 
