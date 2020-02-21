@@ -12,6 +12,7 @@ linefit:
   fitting_period: 1.0 # seconds
   threshold_distance: 1.5 # point must lie within this distance from the line to be considered inlier during fitting
   min_points: 10
+  back_up: 2.0 # metres - how much to back up from the end of the line
 
 circle:
   min_radius: 2.5 # fitted (RANSAC) or estimated (UKF) circles with radius smaller than this will be discarded
@@ -38,7 +39,7 @@ lkf:
 
 rheiv:
   fitting_period: 0.5 # seconds
-  max_line_points_ratio: 0.5
+  max_line_points_ratio: 0.65
   min_points: 10
   max_points: 80
   visualization_size: 20 # metres

@@ -50,10 +50,10 @@ namespace balloon_filter
         if (curv > 0.0)
         {
           const auto radius = 1.0 / curv;
-          if (radius < m_circle_min_radius)
+          if (radius < m_circle_min_radius || radius > m_circle_max_radius)
           {
             reset_ukf_estimate();
-            ROS_WARN("[UKF]: UKF radius (1/%.2f) estimate is under the threshold (%.2f > %.2f), resetting the UKF!", curv, radius, m_circle_min_radius);
+            ROS_WARN("[UKF]: UKF radius (1/%.2f) estimate is invalid (%.2fm is not between %.2fm and %.2fm), resetting the UKF!", curv, radius, m_circle_min_radius, m_circle_max_radius);
           }
         }
       }
@@ -251,7 +251,7 @@ namespace balloon_filter
               ROS_WARN_THROTTLE(
                   MSG_THROTTLE,
                   "[RHEIV]: Fitted INVALID circle with radius %.2fm (not between %.2fm and %.2fm) to points on the plane (%lus/%lus points are inliers).",
-                  m_circle_min_radius, m_circle_max_radius, radius, inliers.size(), pointcloud->size());
+                  radius, m_circle_min_radius, m_circle_max_radius, inliers.size(), pointcloud->size());
             }
             // otherwise the circle is valid - hooray! inform the user and save it's state
             else
@@ -337,6 +337,7 @@ namespace balloon_filter
     rheiv::theta_t theta;
     if (linefit_pose_stampeds.size() > (size_t)m_linefit_min_pts)
     {
+      const ros::WallTime start_t = ros::WallTime::now();
       const vec3_t plane_normal = plane_theta.block<3, 1>(0, 0);
       const float  plane_d = -plane_theta(3);
       const quat_t plane_quat = quat_t::FromTwoVectors(plane_normal, vec3_t::UnitZ());
@@ -450,6 +451,8 @@ namespace balloon_filter
       // only continue if both lines got enough inliers
       if (line1_points->size() > (size_t)m_linefit_min_pts && line2_points->size() > (size_t)m_linefit_min_pts)
       {
+        success = true;
+
         vec3_t line1_vel;
         {
           // sort the inliers by time
@@ -468,6 +471,14 @@ namespace balloon_filter
           line2.direction = line2_vel;
         }
 
+        // check that the line point in different directions
+        if (line1.direction.dot(line2.direction) > 0.0)
+        {
+          ROS_WARN_THROTTLE(MSG_THROTTLE, "[LINEFIT]: Angle between fitted lines is too small (%.2f < %.2f)! Invalid.", std::acos(line1.direction.normalized().dot(line2.direction.normalized())), M_PI_2);
+          // angle between the lines is less than pi/2
+          success = false;
+        }
+
         line1 = constrain_line_to_pts(line1, line1_points);
         line2 = constrain_line_to_pts(line2, line2_points);
 
@@ -482,12 +493,23 @@ namespace balloon_filter
           chosen_line = line1;
         else
           chosen_line = line2;
-
-        success = true;
+      }
+      else
+      {
+        ROS_WARN_THROTTLE(MSG_THROTTLE, "[LINEFIT]: Lines do not have enough inliers to continue (%lu or %lu is less than %d).", line1_points->size(), line2_points->size(), m_linefit_min_pts);
+        success = false;
       }
 
+      const ros::WallTime end_t = ros::WallTime::now();
+      const double fit_dur = (end_t - start_t).toSec();
       if (success)
       {
+        const auto res_pose = back_up_line(chosen_line, m_linefit_back_up);
+        geometry_msgs::PoseStamped pose_msg;
+        pose_msg.header = header;
+        pose_msg.pose = res_pose;
+        m_pub_line_endpose.publish(pose_msg);
+
         {
           std::string txt = "LINE1";
           if (line1 == chosen_line)
@@ -503,7 +525,13 @@ namespace balloon_filter
           m_pub_line2.publish(line_visualization(line2, header, txt));
           m_pub_line2_pts.publish(line2_points);
         }
+        ROS_INFO_THROTTLE(MSG_THROTTLE, "[LINEFIT]: Fitted lines with %lu and %lu points and %.2fm and %.2fm lengths in %.2fs.", line1_points->size(), line2_points->size(), line1.direction.norm(), line2.direction.norm(), fit_dur);
       }
+      else
+      {
+        ROS_WARN_THROTTLE(MSG_THROTTLE, "[LINEFIT]: Failed to fit lines (took %.2fs)!", fit_dur);
+      }
+
     } else  // if (rheiv_pts.size() > (size_t)m_rheiv_min_pts)
     {
       // Still waiting for enough points to fit the plane through.
@@ -1403,6 +1431,27 @@ namespace balloon_filter
     return ret;
   }
 
+  geometry_msgs::Pose BalloonFilter::back_up_line(const line3d_t& line, const double amount)
+  {
+    geometry_msgs::Pose ret;
+
+    const double clamped_amount = std::clamp(amount, 0.0, line.direction.norm()/2.0);
+    const vec3_t backup_vec = -clamped_amount*line.direction.normalized();
+    const pos_t backed_up_pos = line.origin + line.direction + backup_vec;
+    const quat_t quat = quat_t::FromTwoVectors(vec3_t::UnitX(), line.direction);
+
+    ret.position.x = backed_up_pos.x();
+    ret.position.y = backed_up_pos.y();
+    ret.position.z = backed_up_pos.z();
+
+    ret.orientation.w = quat.w();
+    ret.orientation.x = quat.x();
+    ret.orientation.y = quat.y();
+    ret.orientation.z = quat.z();
+
+    return ret;
+  }
+
   /* reset_circle_estimate() method //{ */
   void BalloonFilter::reset_circle_estimate()
   {
@@ -2077,7 +2126,6 @@ namespace balloon_filter
     /* m_meas_filt_covariance_inflation = cfg.meas_filt__covariance_inflation; */
     m_max_time_since_update = cfg.max_time_since_update;
     m_min_updates_to_confirm = cfg.min_updates_to_confirm;
-    m_circle_min_radius = cfg.circle__min_radius;
 
     /* UKF-related //{ */
 
@@ -2157,7 +2205,9 @@ namespace balloon_filter
     pl.load_param("linefit/threshold_distance", m_linefit_threshold_distance);
     pl.load_param("linefit/fitting_period", m_linefit_fitting_period);
     pl.load_param("linefit/min_points", m_linefit_min_pts);
+    pl.load_param("linefit/back_up", m_linefit_back_up);
 
+    pl.load_param("circle/min_radius", m_circle_min_radius);
     pl.load_param("circle/max_radius", m_circle_max_radius);
     pl.load_param("circle/fit_threshold_distance", m_circle_fit_threshold_distance);
     pl.load_param("circle/snap_threshold_distance", m_circle_snap_threshold_distance);
@@ -2235,6 +2285,9 @@ namespace balloon_filter
 
     m_pub_dbg = nh.advertise<visualization_msgs::MarkerArray>("dbg_marker", 1);
     m_pub_pcl_dbg = nh.advertise<sensor_msgs::PointCloud2>("dbg_pcl", 1);
+
+    m_pub_line_endpose = nh.advertise<geometry_msgs::PoseStamped>("line_endpose", 1);
+    
     m_pub_chosen_meas = nh.advertise<balloon_filter::BallLocation>("chosen_measurement", 1);
     m_pub_chosen_meas_dbg = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("chosen_measurement_dbg", 1);
 

@@ -198,6 +198,7 @@ namespace balloon_filter
       double m_linefit_threshold_distance;
       double m_linefit_fitting_period;
       int m_linefit_min_pts;
+      double m_linefit_back_up;
 
       double m_rheiv_fitting_period;
       double m_rheiv_line_threshold_distance;
@@ -268,6 +269,8 @@ namespace balloon_filter
       ros::Publisher m_pub_plane_dbg2;
       ros::Publisher m_pub_used_pts;
       ros::Publisher m_pub_fitted_plane;
+
+      ros::Publisher m_pub_line_endpose;
 
       ros::Publisher m_pub_chosen_meas;
       ros::Publisher m_pub_chosen_meas_dbg;
@@ -453,6 +456,8 @@ namespace balloon_filter
       void sort_pcl(pc_XYZt_t::Ptr pcl);
       float estimate_line_orientation(pc_XYZt_t::Ptr points, const line3d_t& line);
       line3d_t constrain_line_to_pts(const line3d_t& line, pc_XYZt_t::Ptr points);
+      geometry_msgs::Pose back_up_line(const line3d_t& line, const double amount);
+
       void reset_circle_estimate();
       
       //}
