@@ -120,6 +120,12 @@ namespace balloon_filter
   using quat_t = Eigen::Quaterniond;
   using anax_t = Eigen::AngleAxisd;
 
+  using pt_XYZ_t = pcl::PointXYZ;
+  using pc_XYZ_t = pcl::PointCloud<pt_XYZ_t>;
+
+  using pt_XYZt_t = pcl::PointXYZI;
+  using pc_XYZt_t = pcl::PointCloud<pt_XYZt_t>;
+
   struct pose_t
   {
     pos_t pos;
@@ -199,6 +205,8 @@ namespace balloon_filter
       double m_linefit_fitting_period;
       int m_linefit_min_pts;
       double m_linefit_back_up;
+      double m_linefit_snap_dist;
+      double m_linefit_snap_ang;
 
       double m_rheiv_fitting_period;
       double m_rheiv_line_threshold_distance;
@@ -206,6 +214,7 @@ namespace balloon_filter
       int m_rheiv_min_pts;
       int m_rheiv_max_pts;
       int m_rheiv_visualization_size;
+      double m_rheiv_snap_dist;
 
       double m_meas_filt_loglikelihood_threshold;
       double m_meas_filt_covariance_inflation;
@@ -216,8 +225,6 @@ namespace balloon_filter
 
       double m_circle_min_radius;
       double m_circle_max_radius;
-      double m_circle_fit_threshold_distance;
-      double m_circle_snap_threshold_distance;
 
       ros::Duration m_ukf_init_history_duration;
       UKF::x_t m_ukf_process_std;
@@ -277,8 +284,6 @@ namespace balloon_filter
       ros::Publisher m_pub_prediction;
       ros::Publisher m_pub_pred_path_dbg;
 
-      ros::Publisher m_pub_circle_dbg;
-
       ros::ServiceServer m_reset_estimates_server;
 
       ros::Timer m_main_loop_timer;
@@ -332,24 +337,9 @@ namespace balloon_filter
         /* m_linefit_new_data = true; */
       };
 
-      using pt_XYZt_t = pcl::PointXYZI;
-      using pc_XYZt_t = pcl::PointCloud<pt_XYZt_t>;
-
-      /*  //{ */
-
-      using pt_XYZ_t = pcl::PointXYZ;
-      using pc_XYZ_t = pcl::PointCloud<pt_XYZ_t>;
-      struct circle3d_t
-      {
-        Eigen::Vector3d center;
-        Eigen::Vector3d normal;
-        double radius;
-      };
-      std::mutex m_circle_mtx;
-      bool m_circle_valid;
-      circle3d_t m_circle;
-
-      //}
+      std::mutex m_linefit_mtx;
+      bool m_linefit_valid;
+      line3d_t m_linefit;
 
       // | ------------------ UKF related variables ----------------- |
 
@@ -432,7 +422,6 @@ namespace balloon_filter
       /* UKF related methods //{ */
       UKF::statecov_t predict_ukf_estimate(const UKF::statecov_t& lkf_estimate, const double dt, const theta_t& plane_theta, const double ball_speed);
       void update_ukf_estimate(const pose_cov_t& measurement, const ros::Time& stamp, const theta_t& plane_theta);
-      void update_ukf_estimate(const circle3d_t& circle, const theta_t& rheiv_plane);
       std::optional<UKF::statecov_t> estimate_ukf_initial_state(const theta_t& plane_theta);
       void init_ukf_estimate(const ros::Time& stamp, const theta_t& plane_theta);
       std::vector<std::pair<UKF::x_t, ros::Time>> predict_ukf_states(const UKF::statecov_t initial_statecov, const ros::Time& initial_timestamp, const theta_t& plane_theta, const double prediction_horizon, const double prediction_step);
@@ -458,7 +447,7 @@ namespace balloon_filter
       line3d_t constrain_line_to_pts(const line3d_t& line, pc_XYZt_t::Ptr points);
       geometry_msgs::Pose back_up_line(const line3d_t& line, const double amount);
 
-      void reset_circle_estimate();
+      void reset_line_estimate();
       
       //}
 
@@ -479,7 +468,6 @@ namespace balloon_filter
       balloon_filter::Plane to_output_message(const rheiv::theta_t& plane_theta);
       visualization_msgs::MarkerArray line_visualization(const line3d_t& line, const std_msgs::Header& header, const std::string& text);
       visualization_msgs::MarkerArray plane_visualization(const theta_t& plane_theta, const std_msgs::Header& header, const pos_t& origin);
-      visualization_msgs::MarkerArray circle_visualization(const circle3d_t& circle, const std_msgs::Header& header);
 
       pos_t get_cur_mav_pos();
 

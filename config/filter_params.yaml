@@ -9,10 +9,12 @@ ball_speed2: 8.0 # metres per second
 ball_speed_change_after: 480.0 # seconds (480s is 8min)
 
 linefit:
-  fitting_period: 1.0 # seconds
+  fitting_period: 0.2 # seconds
   threshold_distance: 1.5 # point must lie within this distance from the line to be considered inlier during fitting
   min_points: 10
   back_up: 2.0 # metres - how much to back up from the end of the line
+  snap_distance: 2.0 # metres
+  snap_angle: 0.25 # radians
 
 circle:
   min_radius: 2.5 # fitted (RANSAC) or estimated (UKF) circles with radius smaller than this will be discarded
@@ -45,6 +47,7 @@ rheiv:
   visualization_size: 20 # metres
   timeout: 1.0 # seconds
   line_threshold_distance: 1.0 # point must lie within this distance from the line to be considered inlier during fitting
+  snap_distance: 2.0 # metres
 
 bounds: # measurements outside these bounds will be ignored
   z:
