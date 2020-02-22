@@ -1883,7 +1883,7 @@ namespace balloon_filter
 
   /* BalloonFilter::reset_estimates_callback() method //{ */
 
-  bool BalloonFilter::reset_estimates_callback([[maybe_unused]] balloon_filter::ResetEstimates::Request& req, balloon_filter::ResetEstimates::Response& resp)
+  bool BalloonFilter::reset_estimates_callback([[maybe_unused]] std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& resp)
   {
     reset_estimates();
     resp.message = "Current estimates were reset.";

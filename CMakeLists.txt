@@ -31,12 +31,6 @@ generate_dynamic_reconfigure_options(
   config/FilterParams.cfg
   )
 
-#Generate services in the 'srv' folder
-add_service_files(
-   FILES
-   ResetEstimates.srv
- )
-
 #Generate messages in the 'msg' folder
 add_message_files(
    FILES

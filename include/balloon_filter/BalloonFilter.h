@@ -25,6 +25,7 @@
 #include <sensor_msgs/point_cloud2_iterator.h>
 #include <mrs_msgs/Float64Stamped.h>
 #include <std_msgs/Float64.h>
+#include <std_srvs/Trigger.h>
 
 // MRS stuff
 #include <mrs_lib/Profiler.h>
@@ -88,7 +89,6 @@
 #include <balloon_filter/plane_rheiv.h>
 /* #include <balloon_filter/conic_rheiv.h> */
 #include <balloon_filter/FilterParamsConfig.h>
-#include <balloon_filter/ResetEstimates.h>
 #include <balloon_filter/Plane.h>
 #include <balloon_filter/UKFState.h>
 #include <balloon_filter/BallPrediction.h>
@@ -448,7 +448,7 @@ namespace balloon_filter
       pos_t get_cur_mav_pos();
 
       void reset_estimates();
-      bool reset_estimates_callback([[maybe_unused]] balloon_filter::ResetEstimates::Request& req, balloon_filter::ResetEstimates::Response& resp);
+      bool reset_estimates_callback([[maybe_unused]] std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& resp);
       void load_dynparams(drcfg_t cfg);
 
   };

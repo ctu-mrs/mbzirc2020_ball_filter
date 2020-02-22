@@ -60,6 +60,9 @@
 
       <remap from="~gt_ball_speed" to="~gt_ball_speed$(arg suf)" />
 
+      <!-- Services -->
+      <remap from="~reset_estimates" to="~reset_estimates" />
+
     </node>
 
   </group>
