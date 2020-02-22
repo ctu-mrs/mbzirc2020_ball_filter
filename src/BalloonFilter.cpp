@@ -94,18 +94,19 @@ namespace balloon_filter
       // This is to make sure that the point set is well conditioned for plane fitting.
       /*  //{ */
 
-      Eigen::VectorXf line_params;
-      double line_pts_ratio;
+      /* Eigen::VectorXf line_params; */
+      /* double line_pts_ratio; */
+      if (pointcloud->size() > (size_t)m_rheiv_min_pts) // this should be redundant, but it still crashes...
       {
         auto model_l = boost::make_shared<pcl::SampleConsensusModelLine<pt_XYZ_t>>(pointcloud);
         pcl::RandomSampleConsensus<pt_XYZ_t> fitter(model_l);
         fitter.setDistanceThreshold(m_rheiv_line_threshold_distance);
         fitter.computeModel();
-        fitter.getModelCoefficients(line_params);
+        /* fitter.getModelCoefficients(line_params); */
         std::vector<int> inliers;
         fitter.getInliers(inliers);
 
-        line_pts_ratio = inliers.size() / double(pointcloud->size());
+        const double line_pts_ratio = inliers.size() / double(pointcloud->size());
         well_conditioned = line_pts_ratio < m_rheiv_max_line_pts_ratio;
         if (well_conditioned)
           ROS_INFO_THROTTLE(MSG_THROTTLE, "[RHEIV]: Point set is well conditioned (ratio of line points is %.2f < %.2f), fitting plane.", line_pts_ratio,
@@ -282,6 +283,7 @@ namespace balloon_filter
       pcl::PointIndicesPtr line1_inliers = boost::make_shared<pcl::PointIndices>();
       pc_XYZt_t::Ptr line1_points = boost::make_shared<pc_XYZt_t>();
       line3d_t line1;
+      if (pointcloud->size() > (size_t)m_linefit_min_pts) // this should be redundant, but it still crashes...
       /*  //{ */
 
       {
@@ -305,6 +307,11 @@ namespace balloon_filter
       }
 
       //}
+      else
+      {
+        ROS_WARN_THROTTLE(MSG_THROTTLE, "[LINEFIT]: Not enough valid points to fit a line (%lu is less than %d). Aborting.", pointcloud->size(), m_linefit_min_pts);
+        return;
+      }
 
       // | ------------------- Fit the second line ------------------ |
 
@@ -353,6 +360,11 @@ namespace balloon_filter
           line2.origin = line2_params.block<3, 1>(0, 0).cast<double>();
           line2.direction = line2_params.block<3, 1>(3, 0).cast<double>();
           line2.radius = 0.1;
+        }
+        else
+        {
+          ROS_WARN_THROTTLE(MSG_THROTTLE, "[LINEFIT]: Not enough valid points remaining to fit the second line (%lu is less than %d). Aborting.", line1_outliers->size(), m_linefit_min_pts);
+          return;
         }
       }
 
