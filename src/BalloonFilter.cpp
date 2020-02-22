@@ -163,6 +163,8 @@ namespace balloon_filter
           // Fitting threw exception, notify the user.
           stamp = ros::Time::now();
           ROS_WARN_STREAM_THROTTLE(MSG_THROTTLE, "[RHEIV]: Could not fit plane: '" << ex.what() << "' (took " << (stamp - fit_time_start).toSec() << "s).");
+          std::scoped_lock lck(m_rheiv_data_mtx);
+          m_rheiv_fitting = false;
         }
 
         //}
@@ -783,8 +785,6 @@ namespace balloon_filter
         mrs_lib::get_mutexed(m_lkf_estimate_mtx, m_lkf_estimate_exists, m_lkf_estimate, m_lkf_last_update, m_lkf_n_updates);
 
     const auto pos = measurement.pos_cov.pos;
-    ROS_INFO_THROTTLE(MSG_THROTTLE, "[LKF]: Updating current estimate using point [%.2f, %.2f, %.2f]", pos.x(), pos.y(),
-                      pos.z());
     const double dt = (stamp - lkf_last_update).toSec();
     if (dt < 0.0)
       return;
@@ -820,7 +820,7 @@ namespace balloon_filter
 
         m_lkf.H = LKF::H_t::Identity(3, m_lkf_n_states);
         lkf_estimate = m_lkf.correct(lkf_estimate, z, R);
-        ROS_INFO_THROTTLE(MSG_THROTTLE, "[lKF]: Updating current estimate using point [%.2f, %.2f, %.2f]", pos.x(), pos.y(),
+        ROS_INFO_THROTTLE(MSG_THROTTLE, "[LKF]: Updating current estimate using point [%.2f, %.2f, %.2f]", pos.x(), pos.y(),
                           pos.z());
       }
     }

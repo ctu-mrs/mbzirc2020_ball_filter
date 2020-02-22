@@ -15,7 +15,7 @@ linefit:
   back_up: 8.0 # metres - how much to back up from the end of the line
   snap_distance: 2.0 # metres
   snap_angle: 0.25 # radians
-  max_point_age: 90.0 # seconds
+  max_point_age: 30.0 # seconds
 
 circle:
   min_radius: 2.5 # fitted (RANSAC) or estimated (UKF) circles with radius smaller than this will be discarded
@@ -44,7 +44,7 @@ rheiv:
   fitting_period: 0.5 # seconds
   max_line_points_ratio: 0.65
   min_points: 10
-  max_points: 80
+  max_points: 100
   visualization_size: 100 # metres
   timeout: 1.0 # seconds
   line_threshold_distance: 1.0 # point must lie within this distance from the line to be considered inlier during fitting
