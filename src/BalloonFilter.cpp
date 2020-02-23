@@ -22,7 +22,7 @@ namespace balloon_filter
       process_measurement(*(m_sh_localized->get_data()));
 
     const auto lkf_last_update = get_mutexed(m_lkf_estimate_mtx, m_lkf_last_update);
-    if ((ros::Time::now() - lkf_last_update).toSec() >= m_max_time_since_update)
+    if ((ros::Time::now() - lkf_last_update).toSec() >= m_lkf_max_time_since_update)
       reset_lkf_estimate();
 
     if (m_lkf_estimate_exists)
@@ -65,7 +65,7 @@ namespace balloon_filter
         get_set_mutexed(m_rheiv_data_mtx, std::forward_as_tuple(m_rheiv_pts, m_rheiv_covs, m_rheiv_new_data, m_rheiv_last_data_update),
                         std::make_tuple(false, true), std::forward_as_tuple(m_rheiv_new_data, m_rheiv_fitting));
 
-    if ((ros::Time::now() - rheiv_last_data_update).toSec() >= m_max_time_since_update)
+    if ((ros::Time::now() - rheiv_last_data_update).toSec() >= m_rheiv_max_time_since_update)
     {
       reset_rheiv_estimate();
       return;
@@ -1637,7 +1637,8 @@ namespace balloon_filter
     /* m_meas_filt_desired_dt = ros::Duration(cfg.meas_filt__desired_dt); */
     /* m_meas_filt_loglikelihood_threshold = cfg.meas_filt__loglikelihood_threshold; */
     /* m_meas_filt_covariance_inflation = cfg.meas_filt__covariance_inflation; */
-    m_max_time_since_update = cfg.max_time_since_update;
+    m_lkf_max_time_since_update = cfg.lkf__max_time_since_update;
+    m_rheiv_max_time_since_update = cfg.rheiv__max_time_since_update;
     m_min_updates_to_confirm = cfg.min_updates_to_confirm;
 
     /* LKF-related //{ */

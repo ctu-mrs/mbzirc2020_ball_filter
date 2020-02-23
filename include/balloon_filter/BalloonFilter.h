@@ -217,10 +217,10 @@ namespace balloon_filter
       int m_rheiv_max_pts;
       int m_rheiv_visualization_size;
       double m_rheiv_snap_dist;
+      double m_rheiv_max_time_since_update;
 
       double m_meas_filt_loglikelihood_threshold;
       double m_meas_filt_covariance_inflation;
-      double m_max_time_since_update;
       double m_min_updates_to_confirm;
       double m_bounds_z_min;
       double m_bounds_z_max;
@@ -237,6 +237,7 @@ namespace balloon_filter
       double m_lkf_max_speed_err;
       double m_lkf_prediction_horizon;
       double m_lkf_prediction_step;
+      double m_lkf_max_time_since_update;
 
       int m_ball_mode;
       double m_ball_wire_length;

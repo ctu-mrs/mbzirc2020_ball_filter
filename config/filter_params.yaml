@@ -1,6 +1,5 @@
 processing_period: 0.05 # seconds
 prediction_period: 0.05 # seconds
-max_time_since_update: 666.0 # seconds
 min_updates_to_confirm: 2
 
 ball_wire_length: 1.45 # metres
@@ -35,6 +34,7 @@ lkf:
   prediction_horizon: 4.0 # seconds
   prediction_step: 0.4 # seconds
   init_history_duration: 20.0 # seconds
+  max_time_since_update: 3.0 # seconds
 
   process_std:
     position: 0.05
@@ -54,6 +54,7 @@ rheiv:
   timeout: 1.0 # seconds
   line_threshold_distance: 1.0 # point must lie within this distance from the line to be considered inlier during fitting
   snap_distance: 2.0 # metres
+  max_time_since_update: 666.0 # seconds
 
 bounds: # measurements outside these bounds will be ignored
   z:
