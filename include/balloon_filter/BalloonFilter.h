@@ -238,10 +238,10 @@ namespace balloon_filter
       double m_lkf_prediction_horizon;
       double m_lkf_prediction_step;
 
+      int m_ball_mode;
       double m_ball_wire_length;
       
-      double m_ball_speed1;
-      double m_ball_speed2;
+      double m_ball_speed;
       ros::Time m_ball_speed_change;
 
       Eigen::MatrixXd m_safety_area_border_points;

@@ -1623,12 +1623,9 @@ namespace balloon_filter
   //}
 
   /* ball_speed_at_time() method //{ */
-  double BalloonFilter::ball_speed_at_time(const ros::Time& timestamp)
+  double BalloonFilter::ball_speed_at_time([[maybe_unused]] const ros::Time& timestamp)
   {
-    if (timestamp < m_ball_speed_change)
-      return m_ball_speed1;
-    else
-      return m_ball_speed2;
+    return m_ball_speed;
   }
   //}
 
@@ -1696,8 +1693,6 @@ namespace balloon_filter
     const double prediction_period = pl.load_param2<double>("prediction_period");
     pl.load_param("world_frame_id", m_world_frame_id);
     pl.load_param("uav_frame_id", m_uav_frame_id);
-    pl.load_param("ball_speed1", m_ball_speed1);
-    pl.load_param("ball_speed2", m_ball_speed2);
     pl.load_param("ball_wire_length", m_ball_wire_length);
 
     pl.load_param("linefit/threshold_distance", m_linefit_threshold_distance);
@@ -1706,14 +1701,10 @@ namespace balloon_filter
     pl.load_param("linefit/back_up", m_linefit_back_up);
     pl.load_param("linefit/snap_distance", m_linefit_snap_dist);
     pl.load_param("linefit/snap_angle", m_linefit_snap_ang);
-    pl.load_param("linefit/max_point_age", m_linefit_max_pt_age);
 
     pl.load_param("circle/min_radius", m_circle_min_radius);
     pl.load_param("circle/max_radius", m_circle_max_radius);
 
-    const ros::Duration ball_speed_change_after = pl.load_param2("ball_speed_change_after");
-    // TODO: set the time in some smarter manner
-    m_ball_speed_change = ros::Time::now() + ball_speed_change_after;
     pl.load_param("rheiv/fitting_period", m_rheiv_fitting_period);
     pl.load_param("rheiv/line_threshold_distance", m_rheiv_line_threshold_distance);
     pl.load_param("rheiv/max_line_points_ratio", m_rheiv_max_line_pts_ratio);
@@ -1724,6 +1715,10 @@ namespace balloon_filter
 
     pl.load_param("lkf/use_acceleration", m_lkf_use_acceleration);
     pl.load_param("lkf/init_history_duration", m_lkf_init_history_duration);
+
+    const int ball_mode = pl.load_param2<int>("ball_mode");
+    const std::vector<double> ball_speeds = pl.load_param2<std::vector<double>>("ball_speeds");
+    const std::vector<double> linefit_max_point_ages = pl.load_param2<std::vector<double>>("linefit/max_point_ages");
 
     // | ----------------------- safety area ---------------------- |
     /*  //{ */
@@ -1765,6 +1760,17 @@ namespace balloon_filter
     {
       ROS_ERROR("Some dynamic parameter default values were not loaded successfully, ending the node");
       ros::shutdown();
+    }
+
+    if (ball_mode < 0 || (size_t)ball_mode > ball_speeds.size() || (size_t)ball_mode > linefit_max_point_ages.size())
+    {
+      ROS_ERROR("Invalid ball mode %d < 0 or %d > %lu or %d > %lu", ball_mode, ball_mode, ball_speeds.size(), ball_mode, linefit_max_point_ages.size());
+      ros::shutdown();
+    }
+    else
+    {
+      m_ball_speed = ball_speeds.at(ball_mode);
+      m_linefit_max_pt_age = ros::Duration(linefit_max_point_ages.at(ball_mode));
     }
 
     //}
