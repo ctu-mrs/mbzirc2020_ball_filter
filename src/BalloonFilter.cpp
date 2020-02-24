@@ -554,11 +554,24 @@ namespace balloon_filter
       return;
     }
 
-
     pos_t pos;
     pos.x() = msg.pose.pose.position.x;
     pos.y() = msg.pose.pose.position.y;
     pos.z() = msg.pose.pose.position.z;
+
+    const auto cur_cmd_pos_yaw_opt = get_uav_cmd_position();
+    if (cur_cmd_pos_yaw_opt.has_value())
+    {
+      const auto cur_cmd_pos_yaw = cur_cmd_pos_yaw_opt.value();
+      const auto intersect_plane = get_yz_plane(cur_cmd_pos_yaw);
+      const double signed_ball_dist = signed_point_plane_distance(pos, intersect_plane);
+      // if detection is behind our backs, ignooore it
+      if (signed_ball_dist < 0.0)
+      {
+        ROS_WARN_THROTTLE(1.0, "[BalloonFilter]: Ignoring detection behind current YZ plane (signed distance: %.2fm).", signed_ball_dist);
+        return;
+      }
+    }
 
     pose_t det_pose;
     det_pose.pos = pos;
@@ -1030,30 +1043,39 @@ namespace balloon_filter
   // |                Line fitting related methods                |
   // --------------------------------------------------------------
 
+  /* transform_pcl() method //{ */
   void BalloonFilter::transform_pcl(pc_XYZt_t::Ptr pcl, const Eigen::Quaternionf& quat, const Eigen::Vector3f trans)
   {
     for (auto& pt : pcl->points)
       pt.getVector3fMap() = quat * pt.getVector3fMap() + trans;
   }
+  //}
 
+  /* transform_line() method //{ */
   void BalloonFilter::transform_line(line3d_t& line, const quat_t& quat, const vec3_t& trans)
   {
     line.origin = quat*line.origin + trans;
     line.direction = quat*line.direction;
   }
+  //}
 
+  /* sort_pcl() method //{ */
   void BalloonFilter::sort_pcl(pc_XYZt_t::Ptr pcl)
   {
     std::sort(std::begin(pcl->points), std::end(pcl->points),
               // comparison lambda function
               [](const pt_XYZt_t& a, const pt_XYZt_t& b) { return a.intensity < b.intensity; });
   }
+  //}
 
+  /* to_eigen() method //{ */
   pos_t BalloonFilter::to_eigen(const pt_XYZt_t& pt)
   {
     return {pt.x, pt.y, pt.z};
   }
+  //}
 
+  /* estimate_line_orientation() method //{ */
   float BalloonFilter::estimate_line_orientation(pc_XYZt_t::Ptr points, const line3d_t& line)
   {
     const vec3_t line_dir = line.direction;
@@ -1072,7 +1094,9 @@ namespace balloon_filter
     std::nth_element(std::begin(orientations), median_it , std::end(orientations));
     return mrs_lib::sign(*median_it);
   }
+  //}
 
+  /* constrain_line_to_pts() method //{ */
   line3d_t BalloonFilter::constrain_line_to_pts(const line3d_t& line, pc_XYZt_t::Ptr points)
   {
     std::vector<float> dists;
@@ -1093,27 +1117,30 @@ namespace balloon_filter
     ret.direction = dir;
     return ret;
   }
+  //}
 
+  /* back_up_line() method //{ */
   geometry_msgs::Pose BalloonFilter::back_up_line(const line3d_t& line, const double amount)
   {
     geometry_msgs::Pose ret;
-
+  
     const double clamped_amount = std::clamp(amount, 0.0, line.direction.norm()/2.0);
     const vec3_t backup_vec = -clamped_amount*line.direction.normalized();
     const pos_t backed_up_pos = line.origin + line.direction + backup_vec;
     const quat_t quat = quat_t::FromTwoVectors(vec3_t::UnitX(), line.direction);
-
+  
     ret.position.x = backed_up_pos.x();
     ret.position.y = backed_up_pos.y();
     ret.position.z = backed_up_pos.z();
-
+  
     ret.orientation.w = quat.w();
     ret.orientation.x = quat.x();
     ret.orientation.y = quat.y();
     ret.orientation.z = quat.z();
-
+  
     return ret;
   }
+  //}
 
   /* reset_line_estimate() method //{ */
   void BalloonFilter::reset_line_estimate()
@@ -1128,6 +1155,51 @@ namespace balloon_filter
   // --------------------------------------------------------------
   // |                       Helper methods                       |
   // --------------------------------------------------------------
+
+  /* get_yz_plane() method //{ */
+  plane_t BalloonFilter::get_yz_plane(const vec4_t& pose)
+  {
+    const vec3_t normal(cos(pose.w()), sin(pose.w()), 0.0);
+    plane_t ret;
+    ret.point = pose.block<3, 1>(0, 0);
+    ret.normal = normal;
+    return ret;
+  }
+  //}
+
+  /* signed_point_plane_distance() method //{ */
+  // returns +distance if the point is IN FRONT of the plane, -distance if the point is BEHIND the plane
+  double BalloonFilter::signed_point_plane_distance(const vec3_t& point, const plane_t& plane)
+  {
+    return (point - plane.point).dot(plane.normal.normalized());
+  }
+  //}
+
+  /* get_uav_cmd_position() method //{ */
+  std::optional<vec4_t> BalloonFilter::get_uav_cmd_position()
+  {
+    if (!m_sh_cmd_odom->has_data())
+      return std::nullopt;
+    const nav_msgs::Odometry odom = *(m_sh_cmd_odom->get_data());
+    return process_odom(odom);
+  }
+  //}
+
+  /* process_odom() method //{ */
+  std::optional<vec4_t> BalloonFilter::process_odom(const nav_msgs::Odometry& odom)
+  {
+    const auto tf_opt = get_transform_to_world(odom.header.frame_id, odom.header.stamp);
+    if (!tf_opt.has_value())
+      return std::nullopt;
+    const vec3_t pos = to_eigen(odom.pose.pose.position);
+    const quat_t quat = to_eigen(odom.pose.pose.orientation);
+    const vec3_t pos_global = tf_opt.value() * pos;
+    const quat_t quat_global = quat_t((tf_opt.value() * quat).rotation());
+    const double yaw = yaw_from_quat(quat_global);
+    const vec4_t pos_yaw(pos_global.x(), pos_global.y(), pos_global.z(), yaw);
+    return pos_yaw;
+  }
+  //}
 
   /* reset_estimates() method //{ */
   void BalloonFilter::reset_estimates()
@@ -1542,12 +1614,10 @@ namespace balloon_filter
   /* get_cur_mav_pos() method //{ */
   pos_t BalloonFilter::get_cur_mav_pos()
   {
-    Eigen::Affine3d m2w_tf;
-    bool tf_ok = get_transform_to_world(m_uav_frame_id, ros::Time::now(), m2w_tf);
-    if (!tf_ok)
+    const auto tf_opt = get_transform_to_world(m_uav_frame_id, ros::Time::now());
+    if (!tf_opt.has_value())
       return pos_t(0, 0, 0);
-    ;
-    return m2w_tf.translation();
+    return tf_opt.value().translation();
   }
   //}
 
@@ -1782,6 +1852,7 @@ namespace balloon_filter
     mrs_lib::SubscribeMgr smgr(nh);
     constexpr bool time_consistent = false;
     m_sh_localized = smgr.create_handler<geometry_msgs::PoseWithCovarianceStamped, time_consistent>("localized_ball", ros::Duration(5.0));
+    m_sh_cmd_odom = smgr.create_handler<nav_msgs::Odometry>("cmd_odom", ros::Duration(5.0));
 
     m_reset_estimates_server = nh.advertiseService("reset_estimates", &BalloonFilter::reset_estimates_callback, this);
     //}

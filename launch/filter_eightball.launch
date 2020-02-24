@@ -40,6 +40,7 @@
 
       <!-- Subscribers -->
       <remap from="~localized_ball" to="uav_detection/detection$(arg suf)" />
+      <remap from="~cmd_odom" to="control_manager/cmd_odom" />
 
       <!-- Publishers -->
       <remap from="~chosen_measurement" to="~chosen_measurement$(arg suf)" />

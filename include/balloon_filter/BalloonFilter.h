@@ -118,6 +118,7 @@ namespace balloon_filter
   using theta_t = RHEIV::theta_t;
 
   using vec3_t = Eigen::Vector3d;
+  using vec4_t = Eigen::Vector4d;
   using quat_t = Eigen::Quaterniond;
   using anax_t = Eigen::AngleAxisd;
 
@@ -161,6 +162,11 @@ namespace balloon_filter
     {
       return origin == other.origin && direction == other.direction && radius == other.radius;
     }
+  };
+  struct plane_t
+  {
+    vec3_t point;
+    vec3_t normal;
   };
 
   using mrs_lib::get_mutexed;
@@ -258,6 +264,7 @@ namespace balloon_filter
       /* mrs_lib::SubscribeHandlerPtr<detections_t> m_sh_detections; */
       /* mrs_lib::SubscribeHandlerPtr<detections_t> m_sh_detections_bfx; */
       mrs_lib::SubscribeHandlerPtr<geometry_msgs::PoseWithCovarianceStamped> m_sh_localized;
+      mrs_lib::SubscribeHandlerPtr<nav_msgs::Odometry> m_sh_cmd_odom;
 
       ros::Publisher m_pub_dbg;
       ros::Publisher m_pub_pcl_dbg;
@@ -371,20 +378,39 @@ namespace balloon_filter
       // |                helper implementation methods               |
       // --------------------------------------------------------------
 
-      /* get_transform_to_world() method //{ */
-      bool get_transform_to_world(const std::string& frame_name, ros::Time stamp, Eigen::Affine3d& tf_out)
+      /* get_transform_raw() method //{ */
+      std::optional<geometry_msgs::TransformStamped> get_transform_raw(const std::string& from_frame_id, const std::string& to_frame_id,
+                                                                                       ros::Time stamp)
       {
         try
         {
           const ros::Duration timeout(1.0 / 100.0);
-          geometry_msgs::TransformStamped transform = m_tf_buffer.lookupTransform(m_world_frame_id, frame_name, stamp, timeout);
-          tf_out = tf2::transformToEigen(transform.transform);
-        } catch (tf2::TransformException& ex)
-        {
-          ROS_WARN("Error during transform from \"%s\" frame to \"%s\" frame.\n\tMSG: %s", frame_name.c_str(), m_world_frame_id.c_str(), ex.what());
-          return false;
+          geometry_msgs::TransformStamped transform = m_tf_buffer.lookupTransform(to_frame_id, from_frame_id, stamp, timeout);
+          return transform;
         }
-        return true;
+        catch (tf2::TransformException& ex)
+        {
+          ROS_WARN("Error during transform from \"%s\" frame to \"%s\" frame.\n\tMSG: %s", from_frame_id.c_str(), to_frame_id.c_str(), ex.what());
+          return std::nullopt;
+        }
+      }
+      //}
+
+      /* get_transform() method //{ */
+      std::optional<Eigen::Affine3d> get_transform(const std::string& from_frame_id, const std::string& to_frame_id, ros::Time stamp)
+      {
+        const auto tf_opt = get_transform_raw(from_frame_id, to_frame_id, stamp);
+        if (tf_opt.has_value())
+          return tf2::transformToEigen(tf_opt.value().transform);
+        else
+          return std::nullopt;
+      }
+      //}
+
+      /* get_transform_to_world() method //{ */
+      std::optional<Eigen::Affine3d> get_transform_to_world(const std::string& frame_id, ros::Time stamp)
+      {
+        return get_transform(frame_id, m_world_frame_id, stamp);
       }
       //}
 
@@ -447,6 +473,42 @@ namespace balloon_filter
       visualization_msgs::MarkerArray plane_visualization(const theta_t& plane_theta, const std_msgs::Header& header);
 
       pos_t get_cur_mav_pos();
+      plane_t get_yz_plane(const vec4_t& pose);
+      double signed_point_plane_distance(const vec3_t& point, const plane_t& plane);
+      std::optional<vec4_t> get_uav_cmd_position();
+      std::optional<vec4_t> process_odom(const nav_msgs::Odometry& det);
+
+      /* to_eigen() method //{ */
+      quat_t to_eigen(const geometry_msgs::Quaternion& quat)
+      {
+        quat_t ret;
+        ret.w() = quat.w;
+        ret.x() = quat.x;
+        ret.y() = quat.y;
+        ret.z() = quat.z;
+        return ret;
+      }
+      //}
+
+      /* to_eigen() method //{ */
+      vec3_t to_eigen(const geometry_msgs::Point& point)
+      {
+        vec3_t ret;
+        ret.x() = point.x;
+        ret.y() = point.y;
+        ret.z() = point.z;
+        return ret;
+      }
+      //}
+
+      /* yaw_from_quat() method //{ */
+      double yaw_from_quat(const quat_t& quat)
+      {
+        const vec3_t unit_x_rotated = quat * vec3_t::UnitX();
+        const double yaw = std::atan2(unit_x_rotated.y(), unit_x_rotated.x());
+        return yaw;
+      }
+      //}
 
       void reset_estimates();
       bool reset_estimates_callback([[maybe_unused]] std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& resp);
