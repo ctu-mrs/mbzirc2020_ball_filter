@@ -14,8 +14,9 @@ linefit:
   threshold_distance: 0.8 # point must lie within this distance from the line to be considered inlier during fitting
   min_points: 10
   back_up: 2.0 # metres - how much to back up from the end of the line
-  snap_distance: 2.0 # metres
-  snap_angle: 0.25 # radians
+  snap_distance: 0.0 # metres
+  snap_angle: 0.0 # radians
+  preffered_angle: 3.14 # the line with the direction in the XY plane closer to this angle will be chosen
   max_point_ages: [
     50.0, # seconds
     65.0, # seconds

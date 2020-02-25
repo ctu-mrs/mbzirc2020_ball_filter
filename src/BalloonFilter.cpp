@@ -396,7 +396,7 @@ namespace balloon_filter
           line2.direction = line2_vel;
         }
 
-        // check that the line point in different directions
+        // check that the lines point in different directions
         if (line1.direction.dot(line2.direction) > 0.0)
         {
           ROS_WARN_THROTTLE(MSG_THROTTLE, "[LINEFIT]: Angle between fitted lines is too small (%.2f < %.2f)! Invalid.", std::acos(line1.direction.normalized().dot(line2.direction.normalized())), M_PI_2);
@@ -427,19 +427,26 @@ namespace balloon_filter
             chosen_line = line1;
           else
             chosen_line = line2;
-          const double upd_ang = std::acos(std::clamp(prev_dir.dot(chosen_line.direction.normalized()), -1.0, 0.0));
+          const double upd_ang = std::acos(std::clamp(prev_dir.dot(chosen_line.direction.normalized()), -1.0, 1.0));
           if (std::isnan(upd_ang))
             ROS_INFO_THROTTLE(MSG_THROTTLE, "POSRALO SE TO");
           ROS_INFO_THROTTLE(MSG_THROTTLE, "[LINEFIT]: Updating chosen line with a new fit (angle: %.2f).", upd_ang);
         }
         else
         {
-          // chose the line with more inliers
-          if (line1_points->size() > line2_points->size())
+          const vec3_t pref_dir(std::cos(m_linefit_preffered_angle), std::sin(m_linefit_preffered_angle), 0.0);
+          const vec3_t line1_dir = line1.direction.normalized();
+          const vec3_t line2_dir = line2.direction.normalized();
+          // chose the line which points more in the preferred direction
+          const double line1_cos = pref_dir.dot(line1_dir);
+          const double line2_cos = pref_dir.dot(line2_dir);
+          // TODO: angle wrap etc
+          if (line1_cos > line2_cos)
             chosen_line = line1;
           else
             chosen_line = line2;
-          ROS_INFO_THROTTLE(MSG_THROTTLE, "[LINEFIT]: Initializing chosen line with a new fit (length: %.2fm).", chosen_line.direction.norm());
+          const double upd_ang = std::acos(std::clamp(pref_dir.dot(chosen_line.direction.normalized()), -1.0, 1.0));
+          ROS_INFO_THROTTLE(MSG_THROTTLE, "[LINEFIT]: Initializing chosen line with a new fit (angle from preffered: %.2f).", upd_ang);
         }
       }
       else
@@ -1772,6 +1779,7 @@ namespace balloon_filter
     pl.load_param("linefit/back_up", m_linefit_back_up);
     pl.load_param("linefit/snap_distance", m_linefit_snap_dist);
     pl.load_param("linefit/snap_angle", m_linefit_snap_ang);
+    pl.load_param("linefit/preffered_angle", m_linefit_preffered_angle);
 
     pl.load_param("circle/min_radius", m_circle_min_radius);
     pl.load_param("circle/max_radius", m_circle_max_radius);

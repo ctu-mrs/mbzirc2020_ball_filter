@@ -214,6 +214,7 @@ namespace balloon_filter
       double m_linefit_back_up;
       double m_linefit_snap_dist;
       double m_linefit_snap_ang;
+      double m_linefit_preffered_angle;
       ros::Duration m_linefit_max_pt_age;
 
       double m_rheiv_fitting_period;
