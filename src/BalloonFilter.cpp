@@ -440,7 +440,6 @@ namespace balloon_filter
           // chose the line which points more in the preferred direction
           const double line1_cos = pref_dir.dot(line1_dir);
           const double line2_cos = pref_dir.dot(line2_dir);
-          // TODO: angle wrap etc
           if (line1_cos > line2_cos)
             chosen_line = line1;
           else
