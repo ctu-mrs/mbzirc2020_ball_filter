@@ -28,13 +28,12 @@
 #include <std_srvs/Trigger.h>
 
 // MRS stuff
-#include <mrs_lib/Profiler.h>
-#include <mrs_lib/ParamLoader.h>
+#include <mrs_lib/param_loader.h>
 #include <mrs_lib/subscribe_handler.h>
-#include <mrs_lib/DynamicReconfigureMgr.h>
+#include <mrs_lib/dynamic_reconfigure_mgr.h>
 #include <mrs_lib/geometry_utils.h>
 #include <mrs_lib/mutex.h>
-#include <mrs_lib/SafetyZone/SafetyZone.h>
+#include <mrs_lib/safety_zone/safety_zone.h>
 #include <mrs_lib/transformer.h>
 
 // PCL
@@ -195,9 +194,6 @@ namespace balloon_filter
       void init_safety_area(const ros::TimerEvent& evt);
 
     private:
-      std::unique_ptr<mrs_lib::Profiler> m_profiler_ptr;
-
-    private:
 
       // --------------------------------------------------------------
       // |                ROS-related member variables                |
@@ -264,8 +260,8 @@ namespace balloon_filter
       std::unique_ptr<tf2_ros::TransformListener> m_tf_listener_ptr;
       /* mrs_lib::SubscribeHandlerPtr<detections_t> m_sh_detections; */
       /* mrs_lib::SubscribeHandlerPtr<detections_t> m_sh_detections_bfx; */
-      mrs_lib::SubscribeHandlerPtr<geometry_msgs::PoseWithCovarianceStamped> m_sh_localized;
-      mrs_lib::SubscribeHandlerPtr<nav_msgs::Odometry> m_sh_cmd_odom;
+      mrs_lib::SubscribeHandler<geometry_msgs::PoseWithCovarianceStamped> m_sh_localized;
+      mrs_lib::SubscribeHandler<nav_msgs::Odometry> m_sh_cmd_odom;
 
       ros::Publisher m_pub_dbg;
       ros::Publisher m_pub_pcl_dbg;

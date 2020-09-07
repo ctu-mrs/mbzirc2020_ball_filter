@@ -18,8 +18,8 @@ namespace balloon_filter
     prev_stamp = cur_stamp;
     load_dynparams(m_drmgr_ptr->config);
 
-    if (m_sh_localized->new_data())
-      process_measurement(*(m_sh_localized->get_data()));
+    if (m_sh_localized.newMsg())
+      process_measurement(*(m_sh_localized.getMsg()));
 
     const auto lkf_last_update = get_mutexed(m_lkf_estimate_mtx, m_lkf_last_update);
     if ((ros::Time::now() - lkf_last_update).toSec() >= m_lkf_max_time_since_update)
@@ -1184,9 +1184,9 @@ namespace balloon_filter
   /* get_uav_cmd_position() method //{ */
   std::optional<vec4_t> BalloonFilter::get_uav_cmd_position()
   {
-    if (!m_sh_cmd_odom->has_data())
+    if (!m_sh_cmd_odom.hasMsg())
       return std::nullopt;
-    const nav_msgs::Odometry odom = *(m_sh_cmd_odom->get_data());
+    const nav_msgs::Odometry odom = *(m_sh_cmd_odom.getMsg());
     return process_odom(odom);
   }
   //}
@@ -1654,7 +1654,7 @@ namespace balloon_filter
   {
     const bool height_valid = pt.z() > m_bounds_z_min && pt.z() < m_bounds_z_max;
     const bool sane_values = !pt.array().isNaN().any() && !pt.array().isInf().any();
-    const bool in_safety_area = !m_safety_area || m_safety_area->isPointValid(pt.x(), pt.y(), pt.z());
+    const bool in_safety_area = !m_safety_area || m_safety_area->isPointValid3d(pt.x(), pt.y(), pt.z());
     return height_valid && sane_values && in_safety_area;
   }
   //}
@@ -1756,7 +1756,7 @@ namespace balloon_filter
 
     ROS_INFO("[%s]: LOADING STATIC PARAMETERS", m_node_name.c_str());
     mrs_lib::ParamLoader pl(nh, m_node_name);
-    const auto uav_name = pl.load_param2<std::string>("uav_name");
+    const auto uav_name = pl.loadParam2<std::string>("uav_name");
 
     /* initialize transformer //{ */
 
@@ -1764,57 +1764,57 @@ namespace balloon_filter
 
     //}
 
-    /* const int measurements_buffer_length = pl.load_param2<int>("meas_filt/buffer_length"); */
+    /* const int measurements_buffer_length = pl.loadParam2<int>("meas_filt/buffer_length"); */
 
-    const double processing_period = pl.load_param2<double>("processing_period");
-    const double prediction_period = pl.load_param2<double>("prediction_period");
-    pl.load_param("world_frame_id", m_world_frame_id);
-    pl.load_param("uav_frame_id", m_uav_frame_id);
-    pl.load_param("ball_wire_length", m_ball_wire_length);
+    const double processing_period = pl.loadParam2<double>("processing_period");
+    const double prediction_period = pl.loadParam2<double>("prediction_period");
+    pl.loadParam("world_frame_id", m_world_frame_id);
+    pl.loadParam("uav_frame_id", m_uav_frame_id);
+    pl.loadParam("ball_wire_length", m_ball_wire_length);
 
-    pl.load_param("linefit/threshold_distance", m_linefit_threshold_distance);
-    pl.load_param("linefit/fitting_period", m_linefit_fitting_period);
-    pl.load_param("linefit/min_points", m_linefit_min_pts);
-    pl.load_param("linefit/back_up", m_linefit_back_up);
-    pl.load_param("linefit/snap_distance", m_linefit_snap_dist);
-    pl.load_param("linefit/snap_angle", m_linefit_snap_ang);
-    pl.load_param("linefit/preffered_angle", m_linefit_preffered_angle);
+    pl.loadParam("linefit/threshold_distance", m_linefit_threshold_distance);
+    pl.loadParam("linefit/fitting_period", m_linefit_fitting_period);
+    pl.loadParam("linefit/min_points", m_linefit_min_pts);
+    pl.loadParam("linefit/back_up", m_linefit_back_up);
+    pl.loadParam("linefit/snap_distance", m_linefit_snap_dist);
+    pl.loadParam("linefit/snap_angle", m_linefit_snap_ang);
+    pl.loadParam("linefit/preffered_angle", m_linefit_preffered_angle);
 
-    pl.load_param("circle/min_radius", m_circle_min_radius);
-    pl.load_param("circle/max_radius", m_circle_max_radius);
+    pl.loadParam("circle/min_radius", m_circle_min_radius);
+    pl.loadParam("circle/max_radius", m_circle_max_radius);
 
-    pl.load_param("rheiv/fitting_period", m_rheiv_fitting_period);
-    pl.load_param("rheiv/line_threshold_distance", m_rheiv_line_threshold_distance);
-    pl.load_param("rheiv/max_line_points_ratio", m_rheiv_max_line_pts_ratio);
-    pl.load_param("rheiv/max_points", m_rheiv_max_pts);
-    pl.load_param("rheiv/visualization_size", m_rheiv_visualization_size);
-    pl.load_param("rheiv/snap_distance", m_rheiv_snap_dist);
-    const double rheiv_timeout_s = pl.load_param2<double>("rheiv/timeout");
+    pl.loadParam("rheiv/fitting_period", m_rheiv_fitting_period);
+    pl.loadParam("rheiv/line_threshold_distance", m_rheiv_line_threshold_distance);
+    pl.loadParam("rheiv/max_line_points_ratio", m_rheiv_max_line_pts_ratio);
+    pl.loadParam("rheiv/max_points", m_rheiv_max_pts);
+    pl.loadParam("rheiv/visualization_size", m_rheiv_visualization_size);
+    pl.loadParam("rheiv/snap_distance", m_rheiv_snap_dist);
+    const double rheiv_timeout_s = pl.loadParam2<double>("rheiv/timeout");
 
-    pl.load_param("lkf/use_acceleration", m_lkf_use_acceleration);
-    pl.load_param("lkf/init_history_duration", m_lkf_init_history_duration);
+    pl.loadParam("lkf/use_acceleration", m_lkf_use_acceleration);
+    pl.loadParam("lkf/init_history_duration", m_lkf_init_history_duration);
 
-    const int ball_mode = pl.load_param2<int>("ball_mode");
-    const std::vector<double> ball_speeds = pl.load_param2<std::vector<double>>("ball_speeds");
-    const std::vector<double> linefit_max_point_ages = pl.load_param2<std::vector<double>>("linefit/max_point_ages");
+    const int ball_mode = pl.loadParam2<int>("ball_mode");
+    const std::vector<double> ball_speeds = pl.loadParam2<std::vector<double>>("ball_speeds");
+    const std::vector<double> linefit_max_point_ages = pl.loadParam2<std::vector<double>>("linefit/max_point_ages");
 
     // | ----------------------- safety area ---------------------- |
     /*  //{ */
 
-    const auto use_safety_area = pl.load_param2<bool>("safety_area/use_safety_area");
-    m_safety_area_frame = pl.load_param2<std::string>("safety_area/frame_name");
+    const auto use_safety_area = pl.loadParam2<bool>("safety_area/use_safety_area");
+    m_safety_area_frame = pl.loadParam2<std::string>("safety_area/frame_name");
 
     if (use_safety_area)
     {
-      m_safety_area_border_points = pl.load_matrix_dynamic2("safety_area/safety_area", -1, 2);
+      m_safety_area_border_points = pl.loadMatrixDynamic2("safety_area/safety_area", -1, 2);
 
-      const auto obstacle_polygons_enabled = pl.load_param2<bool>("safety_area/polygon_obstacles/enabled");
+      const auto obstacle_polygons_enabled = pl.loadParam2<bool>("safety_area/polygon_obstacles/enabled");
       if (obstacle_polygons_enabled)
-        m_safety_area_polygon_obstacle_points = pl.load_matrix_array2("safety_area/polygon_obstacles", std::vector<Eigen::MatrixXd>{});
+        m_safety_area_polygon_obstacle_points = pl.loadMatrixArray2("safety_area/polygon_obstacles", std::vector<Eigen::MatrixXd>{});
 
-      const auto obstacle_points_enabled = pl.load_param2<bool>("safety_area/point_obstacles/enabled");
+      const auto obstacle_points_enabled = pl.loadParam2<bool>("safety_area/point_obstacles/enabled");
       if (obstacle_points_enabled)
-        m_safety_area_point_obstacle_points = pl.load_matrix_array2("safety_area/point_obstacles", std::vector<Eigen::MatrixXd>{});
+        m_safety_area_point_obstacle_points = pl.loadMatrixArray2("safety_area/point_obstacles", std::vector<Eigen::MatrixXd>{});
 
       // TODO: remove this when param loader supports proper loading
       for (auto& matrix : m_safety_area_polygon_obstacle_points)
@@ -1828,7 +1828,7 @@ namespace balloon_filter
 
     //}
 
-    if (!pl.loaded_successfully())
+    if (!pl.loadedSuccessfully())
     {
       ROS_ERROR("Some compulsory parameters were not loaded successfully, ending the node");
       ros::shutdown();
@@ -1856,10 +1856,12 @@ namespace balloon_filter
     /* subscribers //{ */
 
     m_tf_listener_ptr = std::make_unique<tf2_ros::TransformListener>(m_tf_buffer, m_node_name);
-    mrs_lib::SubscribeMgr smgr(nh);
-    constexpr bool time_consistent = false;
-    m_sh_localized = smgr.create_handler<geometry_msgs::PoseWithCovarianceStamped, time_consistent>("localized_ball", ros::Duration(5.0));
-    m_sh_cmd_odom = smgr.create_handler<nav_msgs::Odometry>("cmd_odom", ros::Duration(5.0));
+    mrs_lib::SubscribeHandlerOptions shopts;
+    shopts.nh = nh;
+    shopts.node_name = m_node_name;
+
+    mrs_lib::construct_object(m_sh_localized, shopts, "localized_ball");
+    mrs_lib::construct_object(m_sh_cmd_odom, shopts, "cmd_odom");
 
     m_reset_estimates_server = nh.advertiseService("reset_estimates", &BalloonFilter::reset_estimates_callback, this);
     //}
@@ -1888,12 +1890,6 @@ namespace balloon_filter
     m_pub_pred_path_dbg = nh.advertise<nav_msgs::Path>("predicted_path", 1);
 
     m_pub_gt_ball_speed = nh.advertise<std_msgs::Float64>("gt_ball_speed", 1);
-
-    //}
-
-    /* profiler //{ */
-
-    m_profiler_ptr = std::make_unique<mrs_lib::Profiler>(nh, m_node_name, false);
 
     //}
 
@@ -1937,7 +1933,7 @@ namespace balloon_filter
     /* initialize line fitting //{ */
     
     {
-      /* m_linefit_new_data = false; */
+      /* m_linefit_.newMsg = false; */
       /* m_prev_measurements.set_capacity(measurements_buffer_length); */
       m_linefit_valid = false;
       constexpr int mission_duration = 15; // minutes
