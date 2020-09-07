@@ -1859,6 +1859,7 @@ namespace balloon_filter
     mrs_lib::SubscribeHandlerOptions shopts;
     shopts.nh = nh;
     shopts.node_name = m_node_name;
+    shopts.no_message_timeout = ros::Duration(5.0);
 
     mrs_lib::construct_object(m_sh_localized, shopts, "localized_ball");
     mrs_lib::construct_object(m_sh_cmd_odom, shopts, "cmd_odom");
