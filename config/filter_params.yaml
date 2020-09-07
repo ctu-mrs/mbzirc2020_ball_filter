@@ -6,7 +6,7 @@ ball_wire_length: 1.45 # metres
 ball_mode: 0 # 0 - fast ball, 1 - slow ball
 ball_speeds: [
   8.0, # metres per second
-  5.0, # metres per second
+  8.0, # metres per second
   ]
 
 linefit:

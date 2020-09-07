@@ -16,8 +16,9 @@
       <rosparam file="$(find balloon_filter)/config/trajectory_loader.yaml" />
 
 			<param name="current_working_directory" type="string" value="$(find balloon_filter)" />	
-			<param name="service_topic" type="string" value="control_manager/mpc_tracker/set_trajectory" />	
+			<param name="service_topic" type="string" value="control_manager/trajectory_reference" />	
       
+      <param name="dt" type="double" value="0.2" />
       <param name="use_yaw" type="bool" value="$(arg use_yaw)" />
       <param name="fly_now" type="bool" value="$(arg fly_now)" />
       <param name="loop" type="bool" value="$(arg loop)" />

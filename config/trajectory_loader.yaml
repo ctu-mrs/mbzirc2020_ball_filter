@@ -1,11 +1,11 @@
 main:
-  uav_name_list: [uav62]
+  uav_name_list: [uav60]
   offset: [0.0, 0.0, 0.0, 0.0]      # offset for all trajectories [x,y,z,yaw]
   delay: [0.0]       # delays before calling the service (in seconds)
 
 timeout_for_calling_services: 3     # maximal waiting time for response after calling service
 
-uav62:
+uav60:
   filename: /data/eight_traj.csv
 
 loop: true
