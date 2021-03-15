@@ -2,13 +2,15 @@ processing_period: 0.05 # seconds
 prediction_period: 0.05 # seconds
 min_updates_to_confirm: 2
 
+# parameters of the target, specified in the competition rules
 ball_wire_length: 1.45 # metres
 ball_mode: 0 # 0 - fast ball, 1 - slow ball
 ball_speeds: [
   8.0, # metres per second
-  8.0, # metres per second
+  5.0, # metres per second
   ]
 
+# parameters for the RANSAC line fitting
 linefit:
   fitting_period: 0.2 # seconds
   threshold_distance: 1.2 # point must lie within this distance from the line to be considered inlier during fitting
@@ -22,12 +24,7 @@ linefit:
     65.0, # seconds
     ]
 
-circle:
-  min_radius: 2.5 # fitted (RANSAC) or estimated (UKF) circles with radius smaller than this will be discarded
-  max_radius: 20  # fitted circles with radius larger than this will be discarded
-  fit_threshold_distance: 1.0 # point must lie within this distance from the circle to be considered inlier during fitting
-  snap_threshold_distance: 3.0 # point must lie within this distance from the circle to be considered inlier during curvature snapping
-
+# parameters of the linear kalman filter
 lkf:
   use_acceleration: false # whether to include acceleration in the system model
   min_init_points: 5
@@ -46,6 +43,7 @@ lkf:
     velocity: 0.5
     acceleration: 0.5
 
+# parameters of the plane-fitting algorithm
 rheiv:
   fitting_period: 0.5 # seconds
   max_line_points_ratio: 0.65
@@ -56,26 +54,9 @@ rheiv:
   line_threshold_distance: 1.0 # point must lie within this distance from the line to be considered inlier during fitting
   snap_distance: 2.0 # metres
   max_time_since_update: 666.0 # seconds
-
-bounds: # measurements outside these bounds will be ignored
+  
+# measurements outside these bounds will be ignored
+bounds:
   z:
     min: 5  # metres
     max: 15 # metres
-
-ukf:
-  prediction_horizon: 4.0 # seconds
-  prediction_step: 0.4 # seconds
-  init_history_duration: 20.0 # seconds
-
-  meas_std:
-    curvature_circ: 0.01
-    curvature_line: 0.1
-
-  process_std:
-    position: 0.1
-    yaw: 0.05
-    curvature: 0.01
-
-  init_std:
-    yaw: 2.0
-    curvature: 2.0

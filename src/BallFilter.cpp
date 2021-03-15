@@ -517,7 +517,6 @@ namespace ball_filter
     ball_filter::FilterState filter_state;
     const double expected_speed = ball_speed_at_time(message.header.stamp);
     filter_state.expected_speed = expected_speed;
-    filter_state.ukf_state.valid = false;
     filter_state.lkf_state.valid = false;
     nav_msgs::Path predicted_path;
     predicted_path.header = message.header;
@@ -1779,9 +1778,6 @@ namespace ball_filter
     pl.loadParam("linefit/snap_distance", m_linefit_snap_dist);
     pl.loadParam("linefit/snap_angle", m_linefit_snap_ang);
     pl.loadParam("linefit/preffered_angle", m_linefit_preffered_angle);
-
-    pl.loadParam("circle/min_radius", m_circle_min_radius);
-    pl.loadParam("circle/max_radius", m_circle_max_radius);
 
     pl.loadParam("rheiv/fitting_period", m_rheiv_fitting_period);
     pl.loadParam("rheiv/line_threshold_distance", m_rheiv_line_threshold_distance);

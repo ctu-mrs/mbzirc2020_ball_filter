@@ -40,7 +40,6 @@
 // PCL
 #include <pcl/sample_consensus/ransac.h>
 #include <pcl/sample_consensus/sac_model_line.h>
-#include <pcl/sample_consensus/sac_model_circle.h>
 
 #include <pcl/ModelCoefficients.h>
 #include <pcl/common/common.h>
@@ -85,12 +84,10 @@
 
 // local includes
 #include <ball_filter/vel_lkf.h>
-#include <ball_filter/eight_ukf.h>
 #include <ball_filter/plane_rheiv.h>
 /* #include <ball_filter/conic_rheiv.h> */
 #include <ball_filter/FilterParamsConfig.h>
 #include <ball_filter/Plane.h>
-#include <ball_filter/UKFState.h>
 #include <ball_filter/BallPrediction.h>
 #include <ball_filter/PlaneStamped.h>
 #include <ball_filter/BallLocation.h>
@@ -112,7 +109,6 @@ namespace ball_filter
   using RHEIV = rheiv::RHEIV;
   /* using RHEIV_conic = rheiv_conic::RHEIV_conic; */
   using LKF = lkf::LKF;
-  using UKF = ukf::UKF;
   using pos_t = RHEIV::x_t;
   using cov_t = RHEIV::P_t;
   using theta_t = RHEIV::theta_t;
@@ -229,9 +225,6 @@ namespace ball_filter
       double m_min_updates_to_confirm;
       double m_bounds_z_min;
       double m_bounds_z_max;
-
-      double m_circle_min_radius;
-      double m_circle_max_radius;
 
       bool m_lkf_use_acceleration;
       int m_lkf_n_states;
@@ -461,12 +454,10 @@ namespace ball_filter
       ball_filter::BallLocation to_output_message(const pos_cov_t& estimate, const std_msgs::Header& header);
       geometry_msgs::PoseWithCovarianceStamped to_output_message2(const pos_cov_t& estimate, const std_msgs::Header& header);
       geometry_msgs::PoseStamped to_output_message2(const theta_t& plane_theta, const std_msgs::Header& header);
-      nav_msgs::Path to_output_message(const std::vector<std::pair<UKF::x_t, ros::Time>>& predictions, const std_msgs::Header& header, const theta_t& plane_theta);
       nav_msgs::Path to_output_message(const std::vector<std::pair<LKF::x_t, ros::Time>>& predictions, const std_msgs::Header& header);
       sensor_msgs::PointCloud2 to_output_message(const boost::circular_buffer<pos_t>& points, const std_msgs::Header& header);
       ball_filter::PlaneStamped to_output_message(const theta_t& plane_theta, const std_msgs::Header& header);
       ball_filter::LKFState to_output_message(const LKF::statecov_t& lkf_statecov);
-      ball_filter::UKFState to_output_message(const UKF::statecov_t& ukf_statecov);
       ball_filter::Plane to_output_message(const rheiv::theta_t& plane_theta);
       visualization_msgs::MarkerArray line_visualization(const line3d_t& line, const std_msgs::Header& header, const std::string& text);
       visualization_msgs::MarkerArray plane_visualization(const theta_t& plane_theta, const std_msgs::Header& header);

@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(ball_filter)
 
-set(CMAKE_CXX_FLAGS "-std=c++17 -Wall -O0 -g -fvar-tracking -fvar-tracking-assignments -DEIGEN_INITIALIZE_MATRICES_BY_NAN")
-set(CMAKE_CXX_FLAGS_DEBUG "-std=c++17 -Wall -O0 -g -fvar-tracking -fvar-tracking-assignments -DEIGEN_INITIALIZE_MATRICES_BY_NAN")
-set(CMAKE_CXX_FLAGS_RELEASE "-std=c++17 -Wall -O0 -g -fvar-tracking -fvar-tracking-assignments -DEIGEN_INITIALIZE_MATRICES_BY_NAN")
-set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-std=c++17 -Wall -O0 -g -fvar-tracking -fvar-tracking-assignments -DEIGEN_INITIALIZE_MATRICES_BY_NAN")
+set(CMAKE_CXX_FLAGS "-std=c++17 -Wall -O0 -g -DEIGEN_INITIALIZE_MATRICES_BY_NAN")
+set(CMAKE_CXX_FLAGS_DEBUG "-std=c++17 -Wall -O0 -g -DEIGEN_INITIALIZE_MATRICES_BY_NAN")
+set(CMAKE_CXX_FLAGS_RELEASE "-std=c++17 -Wall -O3 -g")
+set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-std=c++17 -Wall -O3 -g")
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
@@ -37,7 +37,6 @@ add_message_files(
    BallLocation.msg
    Plane.msg
    LKFState.msg
-   UKFState.msg
    FilterState.msg
    BallPrediction.msg
    PlaneStamped.msg
@@ -83,57 +82,14 @@ add_definitions(
   ${PCL_DEFINITIONS}
   )
 
-## Declare a C++ executable
 add_library(BallFilter
-  src/eight_ukf.cpp
   src/plane_rheiv.cpp
   src/vel_lkf.cpp
-  # src/conic_rheiv.cpp
   src/BallFilter.cpp
   )
 add_dependencies(BallFilter
   ${${PROJECT_NAME}_EXPORTED_TARGETS}
   ${catkin_EXPORTED_TARGETS})
-## Specify libraries to link a library or executable target against
 target_link_libraries(BallFilter
   ${catkin_LIBRARIES}
   )
-
-# ## Declare a C++ executable
-# add_executable(eight_ukf
-#   src/eight_ukf.cpp
-#   )
-# add_dependencies(eight_ukf
-#   ${${PROJECT_NAME}_EXPORTED_TARGETS}
-#   ${catkin_EXPORTED_TARGETS})
-# ## Specify libraries to link a library or executable target against
-# target_link_libraries(eight_ukf
-#   ${catkin_LIBRARIES}
-#   )
-# target_compile_options(eight_ukf PRIVATE "-DCOMPILE_EIGHT_UKF_TEST")
-
-# ## Declare a C++ executable
-# add_executable(plane_rheiv
-#   src/plane_rheiv.cpp
-#   )
-# add_dependencies(plane_rheiv
-#   ${${PROJECT_NAME}_EXPORTED_TARGETS}
-#   ${catkin_EXPORTED_TARGETS})
-# ## Specify libraries to link a library or executable target against
-# target_link_libraries(plane_rheiv
-#   ${catkin_LIBRARIES}
-#   )
-# target_compile_options(plane_rheiv PRIVATE "-DCOMPILE_PLANE_RHEIV_TEST")
-
-# ## Declare a C++ executable
-# add_executable(conic_rheiv
-#   src/conic_rheiv.cpp
-#   )
-# add_dependencies(conic_rheiv
-#   ${${PROJECT_NAME}_EXPORTED_TARGETS}
-#   ${catkin_EXPORTED_TARGETS})
-# ## Specify libraries to link a library or executable target against
-# target_link_libraries(conic_rheiv
-#   ${catkin_LIBRARIES}
-#   )
-# target_compile_options(conic_rheiv PRIVATE "-DCOMPILE_CONIC_RHEIV_TEST")
