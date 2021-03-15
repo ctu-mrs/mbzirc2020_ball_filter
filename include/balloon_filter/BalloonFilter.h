@@ -31,10 +31,11 @@
 #include <mrs_lib/param_loader.h>
 #include <mrs_lib/subscribe_handler.h>
 #include <mrs_lib/dynamic_reconfigure_mgr.h>
-#include <mrs_lib/geometry_utils.h>
+#include <mrs_lib/geometry/misc.h>
 #include <mrs_lib/mutex.h>
 #include <mrs_lib/safety_zone/safety_zone.h>
 #include <mrs_lib/transformer.h>
+#include <mrs_lib/utils.h>
 
 // PCL
 #include <pcl/sample_consensus/ransac.h>
@@ -171,6 +172,7 @@ namespace balloon_filter
   using mrs_lib::get_mutexed;
   using mrs_lib::set_mutexed;
   using mrs_lib::get_set_mutexed;
+  using mrs_lib::geometry::vec3_t;
 
   /* //{ class BalloonFilter */
 

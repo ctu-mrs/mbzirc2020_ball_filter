@@ -727,17 +727,17 @@ namespace balloon_filter
           std::make_shared<mrs_lib::SafetyZone>(m_safety_area_border_points, m_safety_area_polygon_obstacle_points, m_safety_area_point_obstacle_points);
       ROS_INFO("[%s]: Safety zone intialized!", m_node_name.c_str());
     }
-    catch (mrs_lib::SafetyZone::BorderError)
+    catch (const mrs_lib::SafetyZone::BorderError&)
     {
       ROS_ERROR("[%s]: Exception caught. Wrong configruation for the safety zone border polygon.", m_node_name.c_str());
       return;
     }
-    catch (mrs_lib::SafetyZone::PolygonObstacleError)
+    catch (const mrs_lib::SafetyZone::PolygonObstacleError&)
     {
       ROS_ERROR("[%s]: Exception caught. Wrong configuration for one of the safety zone polygon obstacles.", m_node_name.c_str());
       return;
     }
-    catch (mrs_lib::SafetyZone::PointObstacleError)
+    catch (const mrs_lib::SafetyZone::PointObstacleError&)
     {
       ROS_ERROR("[%s]: Exception caught. Wrong configuration for one of the safety zone point obstacles.", m_node_name.c_str());
       return;
@@ -1098,7 +1098,7 @@ namespace balloon_filter
     }
     auto median_it = std::begin(orientations) + orientations.size()/2;
     std::nth_element(std::begin(orientations), median_it , std::end(orientations));
-    return mrs_lib::sign(*median_it);
+    return mrs_lib::signum(*median_it);
   }
   //}
 
@@ -1525,8 +1525,8 @@ namespace balloon_filter
     {
       const LKF::x_t& state = pred.first;
       const ros::Time& timestamp = pred.second;
-      const mrs_lib::vec3_t velocity = state.block<3, 1>(3, 0);
-      const quat_t quat = mrs_lib::quaternion_between(mrs_lib::vec3_t(1.0, 0.0, 0.0), velocity);
+      const vec3_t velocity = state.block<3, 1>(3, 0);
+      const quat_t quat = mrs_lib::geometry::quaternionBetween(vec3_t(1.0, 0.0, 0.0), velocity);
       geometry_msgs::PoseStamped pose;
       pose.header = header;
       pose.header.stamp = timestamp;
@@ -1672,7 +1672,7 @@ namespace balloon_filter
   {
     const auto normal1 = plane1.block<3, 1>(0, 0).normalized();
     const auto normal2 = plane2.block<3, 1>(0, 0).normalized();
-    return mrs_lib::angle_between(normal1, normal2);
+    return mrs_lib::geometry::angleBetween(normal1, normal2);
   }
   //}
 
