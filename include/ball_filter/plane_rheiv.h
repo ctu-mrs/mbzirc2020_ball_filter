@@ -1,6 +1,6 @@
 #include <mrs_lib/rheiv.h>
 
-namespace balloon_filter
+namespace ball_filter
 {
   namespace rheiv
   {

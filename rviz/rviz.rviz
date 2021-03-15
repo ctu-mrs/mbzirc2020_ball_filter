@@ -309,7 +309,7 @@ Visualization Manager:
           Radius: 0.029999999329447746
           Shaft Diameter: 0.10000000149011612
           Shaft Length: 0.10000000149011612
-          Topic: /uav62/balloon_filter/predicted_path
+          Topic: /uav62/ball_filter/predicted_path
           Unreliable: false
           Value: true
         - Class: rviz/Group
@@ -339,14 +339,14 @@ Visualization Manager:
               Size (Pixels): 3
               Size (m): 0.5
               Style: Spheres
-              Topic: /uav62/balloon_filter/fit_points
+              Topic: /uav62/ball_filter/fit_points
               Unreliable: false
               Use Fixed Frame: true
               Use rainbow: true
               Value: true
             - Class: rviz/MarkerArray
               Enabled: false
-              Marker Topic: /uav62/balloon_filter/fitted_plane_marker
+              Marker Topic: /uav62/ball_filter/fitted_plane_marker
               Name: plane fitted
               Namespaces:
                 {}
@@ -364,7 +364,7 @@ Visualization Manager:
               Shaft Length: 1
               Shaft Radius: 0.05000000074505806
               Shape: Axes
-              Topic: /uav62/balloon_filter/fitted_plane_pose
+              Topic: /uav62/ball_filter/fitted_plane_pose
               Unreliable: false
               Value: false
           Enabled: true
@@ -373,7 +373,7 @@ Visualization Manager:
           Displays:
             - Class: rviz/MarkerArray
               Enabled: true
-              Marker Topic: /uav62/balloon_filter/fitted_line1_marker
+              Marker Topic: /uav62/ball_filter/fitted_line1_marker
               Name: chosen line
               Namespaces:
                 line: true
@@ -382,7 +382,7 @@ Visualization Manager:
               Value: true
             - Class: rviz/MarkerArray
               Enabled: true
-              Marker Topic: /uav62/balloon_filter/fitted_line2_marker
+              Marker Topic: /uav62/ball_filter/fitted_line2_marker
               Name: other line
               Namespaces:
                 line: true
@@ -420,14 +420,14 @@ Visualization Manager:
           Size (Pixels): 3
           Size (m): 0.07500000298023224
           Style: Spheres
-          Topic: /uav62/balloon_planner/ball_positions
+          Topic: /uav62/ball_planner/ball_positions
           Unreliable: false
           Use Fixed Frame: true
           Use rainbow: true
           Value: true
         - Class: rviz/MarkerArray
           Enabled: true
-          Marker Topic: /uav62/balloon_planner/yz_plane
+          Marker Topic: /uav62/ball_planner/yz_plane
           Name: xy plane
           Namespaces:
             borders: true
@@ -441,7 +441,7 @@ Visualization Manager:
           History Length: 1
           Name: intersection point
           Radius: 0.5
-          Topic: /uav62/balloon_planner/intersection_point
+          Topic: /uav62/ball_planner/intersection_point
           Unreliable: false
           Value: true
       Enabled: true

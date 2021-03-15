@@ -1,5 +1,5 @@
 float64                  expected_speed
-balloon_filter/Plane     fitted_plane
-balloon_filter/UKFState  ukf_state
-balloon_filter/LKFState  lkf_state
+ball_filter/Plane     fitted_plane
+ball_filter/UKFState  ukf_state
+ball_filter/LKFState  lkf_state
 

@@ -13,7 +13,7 @@
 
   <node pkg="nodelet" type="nodelet" name="tf_connector_dummy" args="$(arg nodelet) mrs_uav_odometry/TFConnectorDummy $(arg nodelet_manager)" output="screen" launch-prefix="$(arg launch_prefix)">
 
-    <rosparam file="$(find balloon_filter)/config/tf_connector.yaml" />
+    <rosparam file="$(find ball_filter)/config/tf_connector.yaml" />
 
       <!-- Subscribers -->
     <remap from="~tf_in" to="/tf" />

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8.3)
-project(balloon_filter)
+project(ball_filter)
 
 set(CMAKE_CXX_FLAGS "-std=c++17 -Wall -O0 -g -fvar-tracking -fvar-tracking-assignments -DEIGEN_INITIALIZE_MATRICES_BY_NAN")
 set(CMAKE_CXX_FLAGS_DEBUG "-std=c++17 -Wall -O0 -g -fvar-tracking -fvar-tracking-assignments -DEIGEN_INITIALIZE_MATRICES_BY_NAN")
@@ -54,7 +54,7 @@ add_message_files(
 
 catkin_package(
   INCLUDE_DIRS include
-  LIBRARIES BalloonFilter
+  LIBRARIES BallFilter
   CATKIN_DEPENDS
   #  DEPENDS system_lib
   )
@@ -84,18 +84,18 @@ add_definitions(
   )
 
 ## Declare a C++ executable
-add_library(BalloonFilter
+add_library(BallFilter
   src/eight_ukf.cpp
   src/plane_rheiv.cpp
   src/vel_lkf.cpp
   # src/conic_rheiv.cpp
-  src/BalloonFilter.cpp
+  src/BallFilter.cpp
   )
-add_dependencies(BalloonFilter
+add_dependencies(BallFilter
   ${${PROJECT_NAME}_EXPORTED_TARGETS}
   ${catkin_EXPORTED_TARGETS})
 ## Specify libraries to link a library or executable target against
-target_link_libraries(BalloonFilter
+target_link_libraries(BallFilter
   ${catkin_LIBRARIES}
   )
 

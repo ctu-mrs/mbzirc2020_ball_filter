@@ -1,8 +1,8 @@
-#include <balloon_filter/eight_ukf.h>
+#include <ball_filter/eight_ukf.h>
 
-template class mrs_lib::UKF<balloon_filter::ukf::n_states, balloon_filter::ukf::n_inputs, balloon_filter::ukf::n_measurements>;
+template class mrs_lib::UKF<ball_filter::ukf::n_states, ball_filter::ukf::n_inputs, ball_filter::ukf::n_measurements>;
 
-namespace balloon_filter
+namespace ball_filter
 {
   namespace ukf
   {
@@ -114,8 +114,8 @@ namespace balloon_filter
 #include <fstream>
 #include <random>
 
-using namespace balloon_filter;
-using namespace balloon_filter::ukf;
+using namespace ball_filter;
+using namespace ball_filter::ukf;
 
 /* load_csv() function //{ */
 // from https://stackoverflow.com/questions/34247057/how-to-read-csv-file-and-assign-to-eigen-matrix

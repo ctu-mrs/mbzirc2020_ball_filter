@@ -6,7 +6,7 @@
 
     <node name="trajectory_loader" pkg="trajectory_loader" type="load_trajectory" args="--call-trigger-service" output="screen" >
 
-      <rosparam file="$(find balloon_filter)/config/trajectory_loader.yaml" />
+      <rosparam file="$(find ball_filter)/config/trajectory_loader.yaml" />
       <param name="service_topic" type="string" value="control_manager/start_trajectory_tracking" />
 
     </node>

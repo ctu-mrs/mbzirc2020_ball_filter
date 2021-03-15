@@ -1,6 +1,6 @@
 #include <mrs_lib/lkf.h>
 
-namespace balloon_filter
+namespace ball_filter
 {
   namespace lkf
   {

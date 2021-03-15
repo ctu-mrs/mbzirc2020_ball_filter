@@ -1,8 +1,8 @@
-#include <balloon_filter/conic_rheiv.h>
+#include <ball_filter/conic_rheiv.h>
 
-template class mrs_lib::RHEIV<balloon_filter::rheiv_conic::n_states, balloon_filter::rheiv_conic::n_params>;
+template class mrs_lib::RHEIV<ball_filter::rheiv_conic::n_states, ball_filter::rheiv_conic::n_params>;
 
-namespace balloon_filter
+namespace ball_filter
 {
   namespace rheiv_conic
   {
@@ -52,8 +52,8 @@ namespace balloon_filter
 #include <fstream>
 #include <random>
 
-using namespace balloon_filter;
-using namespace balloon_filter::rheiv_conic;
+using namespace ball_filter;
+using namespace ball_filter::rheiv_conic;
 
 /* load_csv() function //{ */
 // from https://stackoverflow.com/questions/34247057/how-to-read-csv-file-and-assign-to-eigen-matrix
@@ -152,8 +152,8 @@ double theta_diff(const theta_t& th1, const theta_t& th2)
 /* main() function for testing //{ */
 int main()
 {
-  std::string fname = "/home/matous/balloon_workspace/src/ros_packages/balloon_filter/data/conic_data.csv";
-  std::string conic_fname = "/home/matous/balloon_workspace/src/ros_packages/balloon_filter/data/conic.csv";
+  std::string fname = "/home/matous/ball_workspace/src/ros_packages/ball_filter/data/conic_data.csv";
+  std::string conic_fname = "/home/matous/ball_workspace/src/ros_packages/ball_filter/data/conic.csv";
 
   const char delim = ',';
   const Eigen::MatrixXd pts = load_csv<Eigen::MatrixXd>(fname, delim, false);

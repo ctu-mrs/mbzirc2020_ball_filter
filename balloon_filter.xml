@@ -1,5 +1,0 @@
-<library path="lib/libBalloonFilter">
-  <class name="balloon_filter/BalloonFilter" type="balloon_filter::BalloonFilter" base_class_type="nodelet::Nodelet">
-    <description>The balloon filter nodelet</description>
-  </class>
-</library>

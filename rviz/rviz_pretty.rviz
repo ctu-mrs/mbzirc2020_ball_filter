@@ -314,7 +314,7 @@ Visualization Manager:
           Size (Pixels): 3
           Size (m): 0.30000001192092896
           Style: Spheres
-          Topic: /uav1/balloon_filter/measurement_filter
+          Topic: /uav1/ball_filter/measurement_filter
           Unreliable: false
           Use Fixed Frame: true
           Use rainbow: false
@@ -346,7 +346,7 @@ Visualization Manager:
           Shaft Length: 0.10000000149011612
           Shaft Radius: 0.10000000149011612
           Shape: Arrow
-          Topic: /uav1/balloon_filter/detection_used
+          Topic: /uav1/ball_filter/detection_used
           Unreliable: false
           Value: true
         - Alpha: 1
@@ -376,7 +376,7 @@ Visualization Manager:
           Shaft Length: 0.10000000149011612
           Shaft Radius: 0.10000000149011612
           Shape: Arrow
-          Topic: /uav1/balloon_filter/filtered_position
+          Topic: /uav1/ball_filter/filtered_position
           Unreliable: false
           Value: false
         - Alpha: 1
@@ -399,7 +399,7 @@ Visualization Manager:
           Radius: 0.029999999329447746
           Shaft Diameter: 0.10000000149011612
           Shaft Length: 0.10000000149011612
-          Topic: /uav1/balloon_filter/predicted_path
+          Topic: /uav1/ball_filter/predicted_path
           Unreliable: false
           Value: true
         - Class: rviz/Group
@@ -429,14 +429,14 @@ Visualization Manager:
               Size (Pixels): 3
               Size (m): 0.05000000074505806
               Style: Spheres
-              Topic: /uav1/balloon_filter/fit_points
+              Topic: /uav1/ball_filter/fit_points
               Unreliable: false
               Use Fixed Frame: true
               Use rainbow: true
               Value: true
             - Class: rviz/MarkerArray
               Enabled: true
-              Marker Topic: /uav1/balloon_filter/fitted_plane_marker
+              Marker Topic: /uav1/ball_filter/fitted_plane_marker
               Name: plane fitted
               Namespaces:
                 borders: true
@@ -455,7 +455,7 @@ Visualization Manager:
               Shaft Length: 1
               Shaft Radius: 0.05000000074505806
               Shape: Axes
-              Topic: /uav1/balloon_filter/fitted_plane_pose
+              Topic: /uav1/ball_filter/fitted_plane_pose
               Unreliable: false
               Value: false
           Enabled: true
@@ -487,7 +487,7 @@ Visualization Manager:
       Size (Pixels): 3
       Size (m): 0.07500000298023224
       Style: Flat Squares
-      Topic: /balloon_attacher/balloon_positions
+      Topic: /ball_attacher/ball_positions
       Unreliable: false
       Use Fixed Frame: true
       Use rainbow: true

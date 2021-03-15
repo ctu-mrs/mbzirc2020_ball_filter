@@ -84,25 +84,25 @@
 #include <algorithm>
 
 // local includes
-#include <balloon_filter/vel_lkf.h>
-#include <balloon_filter/eight_ukf.h>
-#include <balloon_filter/plane_rheiv.h>
-/* #include <balloon_filter/conic_rheiv.h> */
-#include <balloon_filter/FilterParamsConfig.h>
-#include <balloon_filter/Plane.h>
-#include <balloon_filter/UKFState.h>
-#include <balloon_filter/BallPrediction.h>
-#include <balloon_filter/PlaneStamped.h>
-#include <balloon_filter/BallLocation.h>
+#include <ball_filter/vel_lkf.h>
+#include <ball_filter/eight_ukf.h>
+#include <ball_filter/plane_rheiv.h>
+/* #include <ball_filter/conic_rheiv.h> */
+#include <ball_filter/FilterParamsConfig.h>
+#include <ball_filter/Plane.h>
+#include <ball_filter/UKFState.h>
+#include <ball_filter/BallPrediction.h>
+#include <ball_filter/PlaneStamped.h>
+#include <ball_filter/BallLocation.h>
 
 //}
 
 #define MSG_THROTTLE 0.5
 
-namespace balloon_filter
+namespace ball_filter
 {
   // shortcut type to the dynamic reconfigure manager template instance
-  using drcfg_t = balloon_filter::FilterParamsConfig;
+  using drcfg_t = ball_filter::FilterParamsConfig;
   using drmgr_t = mrs_lib::DynamicReconfigureMgr<drcfg_t>;
 
   using detection_t = geometry_msgs::PoseWithCovarianceStamped;
@@ -174,12 +174,12 @@ namespace balloon_filter
   using mrs_lib::get_set_mutexed;
   using mrs_lib::geometry::vec3_t;
 
-  /* //{ class BalloonFilter */
+  /* //{ class BallFilter */
 
-  class BalloonFilter : public nodelet::Nodelet
+  class BallFilter : public nodelet::Nodelet
   {
     public:
-      BalloonFilter() : m_is_initialized(false), m_safety_area_initialized(false), m_node_name("BalloonFilter") {};
+      BallFilter() : m_is_initialized(false), m_safety_area_initialized(false), m_node_name("BallFilter") {};
       virtual void onInit();
 
     private:
@@ -458,16 +458,16 @@ namespace balloon_filter
       template <class T>
       pos_cov_t get_pos_cov(const T& statecov);
 
-      balloon_filter::BallLocation to_output_message(const pos_cov_t& estimate, const std_msgs::Header& header);
+      ball_filter::BallLocation to_output_message(const pos_cov_t& estimate, const std_msgs::Header& header);
       geometry_msgs::PoseWithCovarianceStamped to_output_message2(const pos_cov_t& estimate, const std_msgs::Header& header);
       geometry_msgs::PoseStamped to_output_message2(const theta_t& plane_theta, const std_msgs::Header& header);
       nav_msgs::Path to_output_message(const std::vector<std::pair<UKF::x_t, ros::Time>>& predictions, const std_msgs::Header& header, const theta_t& plane_theta);
       nav_msgs::Path to_output_message(const std::vector<std::pair<LKF::x_t, ros::Time>>& predictions, const std_msgs::Header& header);
       sensor_msgs::PointCloud2 to_output_message(const boost::circular_buffer<pos_t>& points, const std_msgs::Header& header);
-      balloon_filter::PlaneStamped to_output_message(const theta_t& plane_theta, const std_msgs::Header& header);
-      balloon_filter::LKFState to_output_message(const LKF::statecov_t& lkf_statecov);
-      balloon_filter::UKFState to_output_message(const UKF::statecov_t& ukf_statecov);
-      balloon_filter::Plane to_output_message(const rheiv::theta_t& plane_theta);
+      ball_filter::PlaneStamped to_output_message(const theta_t& plane_theta, const std_msgs::Header& header);
+      ball_filter::LKFState to_output_message(const LKF::statecov_t& lkf_statecov);
+      ball_filter::UKFState to_output_message(const UKF::statecov_t& ukf_statecov);
+      ball_filter::Plane to_output_message(const rheiv::theta_t& plane_theta);
       visualization_msgs::MarkerArray line_visualization(const line3d_t& line, const std_msgs::Header& header, const std::string& text);
       visualization_msgs::MarkerArray plane_visualization(const theta_t& plane_theta, const std_msgs::Header& header);
 
@@ -517,6 +517,6 @@ namespace balloon_filter
   
   //}
 
-}  // namespace balloon_filer
+}  // namespace ball_filer
 
 #endif

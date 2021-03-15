@@ -1,10 +1,10 @@
-#include <balloon_filter/BalloonFilter.h>
+#include <ball_filter/BallFilter.h>
 
-namespace balloon_filter
+namespace ball_filter
 {
 
   /* main_loop() method //{ */
-  void BalloonFilter::main_loop([[maybe_unused]] const ros::TimerEvent& evt)
+  void BallFilter::main_loop([[maybe_unused]] const ros::TimerEvent& evt)
   {
     if (!m_is_initialized)
       return;
@@ -12,7 +12,7 @@ namespace balloon_filter
     const ros::Time cur_stamp = ros::Time::now();
     if (cur_stamp < prev_stamp)
     {
-      ROS_WARN("[BalloonFilter]: Detected jump back in time, resetting.");
+      ROS_WARN("[BallFilter]: Detected jump back in time, resetting.");
       reset_estimates();
     }
     prev_stamp = cur_stamp;
@@ -56,7 +56,7 @@ namespace balloon_filter
   //}
 
   /* rheiv_loop() method //{ */
-  void BalloonFilter::rheiv_loop([[maybe_unused]] const ros::TimerEvent& evt)
+  void BallFilter::rheiv_loop([[maybe_unused]] const ros::TimerEvent& evt)
   {
     if (!m_is_initialized)
       return;
@@ -227,7 +227,7 @@ namespace balloon_filter
   //}
 
   /* linefit_loop() method //{ */
-  void BalloonFilter::linefit_loop([[maybe_unused]] const ros::TimerEvent& evt)
+  void BallFilter::linefit_loop([[maybe_unused]] const ros::TimerEvent& evt)
   {
     if (!m_is_initialized)
       return;
@@ -498,7 +498,7 @@ namespace balloon_filter
   //}
 
   /* prediction_loop() method //{ */
-  void BalloonFilter::prediction_loop([[maybe_unused]] const ros::TimerEvent& evt)
+  void BallFilter::prediction_loop([[maybe_unused]] const ros::TimerEvent& evt)
   {
     if (!m_is_initialized)
       return;
@@ -509,12 +509,12 @@ namespace balloon_filter
     const auto [lkf_estimate_exists, lkf_estimate, lkf_last_update, lkf_n_updates] =
         mrs_lib::get_mutexed(m_lkf_estimate_mtx, m_lkf_estimate_exists, m_lkf_estimate, m_lkf_last_update, m_lkf_n_updates);
 
-    balloon_filter::BallPrediction message;
+    ball_filter::BallPrediction message;
     message.header.frame_id = m_world_frame_id;
     message.header.stamp = ros::Time::now();
 
-    balloon_filter::Plane fitted_plane;
-    balloon_filter::FilterState filter_state;
+    ball_filter::Plane fitted_plane;
+    ball_filter::FilterState filter_state;
     const double expected_speed = ball_speed_at_time(message.header.stamp);
     filter_state.expected_speed = expected_speed;
     filter_state.ukf_state.valid = false;
@@ -552,11 +552,11 @@ namespace balloon_filter
   //}
 
   /* process_measurement() method //{ */
-  void BalloonFilter::process_measurement(const geometry_msgs::PoseWithCovarianceStamped& msg)
+  void BallFilter::process_measurement(const geometry_msgs::PoseWithCovarianceStamped& msg)
   {
     if (msg.header.frame_id != m_world_frame_id)
     {
-      ROS_ERROR("[BalloonFilter]: Message is in wrong frame: '%s' (expected '%s'). Skipping!", msg.header.frame_id.c_str(), m_world_frame_id.c_str());
+      ROS_ERROR("[BallFilter]: Message is in wrong frame: '%s' (expected '%s'). Skipping!", msg.header.frame_id.c_str(), m_world_frame_id.c_str());
       return;
     }
 
@@ -574,7 +574,7 @@ namespace balloon_filter
       // if detection is behind our backs, ignooore it
       if (signed_ball_dist < 0.0)
       {
-        ROS_WARN_THROTTLE(1.0, "[BalloonFilter]: Ignoring detection behind current YZ plane (signed distance: %.2fm).", signed_ball_dist);
+        ROS_WARN_THROTTLE(1.0, "[BallFilter]: Ignoring detection behind current YZ plane (signed distance: %.2fm).", signed_ball_dist);
         return;
       }
     }
@@ -629,7 +629,7 @@ namespace balloon_filter
   //}
 
   /* init_safety_area() method //{ */
-  void BalloonFilter::init_safety_area([[maybe_unused]] const ros::TimerEvent& evt)
+  void BallFilter::init_safety_area([[maybe_unused]] const ros::TimerEvent& evt)
   {
     assert(m_safety_area_border_points.cols() == 2);
     const auto tf_opt = m_transformer.getTransform(m_safety_area_frame, m_world_frame_id);
@@ -753,7 +753,7 @@ namespace balloon_filter
   // --------------------------------------------------------------
 
   /* fit_plane() method //{ */
-  rheiv::theta_t BalloonFilter::fit_plane(const boost::circular_buffer<pos_t>& points, const boost::circular_buffer<cov_t>& covs)
+  rheiv::theta_t BallFilter::fit_plane(const boost::circular_buffer<pos_t>& points, const boost::circular_buffer<cov_t>& covs)
   {
     const rheiv::theta_t ret = m_rheiv.fit(points.begin(), points.end(), covs.begin(), covs.end());
     return ret;
@@ -761,7 +761,7 @@ namespace balloon_filter
   //}
 
   /* reset_rheiv_estimate() method //{ */
-  void BalloonFilter::reset_rheiv_estimate()
+  void BallFilter::reset_rheiv_estimate()
   {
     std::scoped_lock lck(m_rheiv_data_mtx);
     m_rheiv_fitting = false;
@@ -781,7 +781,7 @@ namespace balloon_filter
   // --------------------------------------------------------------
 
   /* predict_lkf_estimate() method //{ */
-  LKF::statecov_t BalloonFilter::predict_lkf_estimate(const LKF::statecov_t& lkf_estimate, const double dt)
+  LKF::statecov_t BallFilter::predict_lkf_estimate(const LKF::statecov_t& lkf_estimate, const double dt)
   {
     LKF::A_t A(m_lkf_n_states, m_lkf_n_states);
     if (m_lkf_use_acceleration)
@@ -798,7 +798,7 @@ namespace balloon_filter
   //}
 
   /* update_lkf_estimate() method //{ */
-  void BalloonFilter::update_lkf_estimate(const pose_cov_t& measurement, const ros::Time& stamp)
+  void BallFilter::update_lkf_estimate(const pose_cov_t& measurement, const ros::Time& stamp)
   {
     auto [lkf_estimate_exists, lkf_estimate, lkf_last_update, lkf_n_updates] =
         mrs_lib::get_mutexed(m_lkf_estimate_mtx, m_lkf_estimate_exists, m_lkf_estimate, m_lkf_last_update, m_lkf_n_updates);
@@ -853,7 +853,7 @@ namespace balloon_filter
   //}
 
   /* estimate_lkf_initial_state() method //{ */
-  std::optional<LKF::statecov_t> BalloonFilter::estimate_lkf_initial_state()
+  std::optional<LKF::statecov_t> BallFilter::estimate_lkf_initial_state()
   {
     const auto [rheiv_pts, rheiv_covs, rheiv_stamps] = mrs_lib::get_mutexed(m_rheiv_data_mtx, m_rheiv_pts, m_rheiv_covs, m_rheiv_stamps);
 
@@ -884,7 +884,7 @@ namespace balloon_filter
 
     if (used_meass.empty())
     {
-      ROS_ERROR("[BalloonFilter]: No recent points available for initial state estimation. Newest point is %.2fs old, need at most %.2fs.",
+      ROS_ERROR("[BallFilter]: No recent points available for initial state estimation. Newest point is %.2fs old, need at most %.2fs.",
                 (cur_time - rheiv_stamps.back()).toSec(), m_lkf_init_history_duration.toSec());
       return std::nullopt;
     }
@@ -931,7 +931,7 @@ namespace balloon_filter
   //}
 
   /* init_lkf_estimate() method //{ */
-  void BalloonFilter::init_lkf_estimate(const ros::Time& stamp)
+  void BallFilter::init_lkf_estimate(const ros::Time& stamp)
   {
     const auto init_statecov_opt = estimate_lkf_initial_state();
     if (init_statecov_opt.has_value())
@@ -956,7 +956,7 @@ namespace balloon_filter
   //}
 
   /* reset_lkf_estimate() method //{ */
-  void BalloonFilter::reset_lkf_estimate()
+  void BallFilter::reset_lkf_estimate()
   {
     set_mutexed(m_lkf_estimate_mtx, std::make_tuple(false, ros::Time::now(), 0),
                 std::forward_as_tuple(m_lkf_estimate_exists, m_lkf_last_update, m_lkf_n_updates));
@@ -965,7 +965,7 @@ namespace balloon_filter
   //}
 
   /* predict_lkf_states() method //{ */
-  std::vector<std::pair<LKF::x_t, ros::Time>> BalloonFilter::predict_lkf_states(const LKF::statecov_t initial_statecov, const ros::Time& initial_timestamp,
+  std::vector<std::pair<LKF::x_t, ros::Time>> BallFilter::predict_lkf_states(const LKF::statecov_t initial_statecov, const ros::Time& initial_timestamp,
                                                                                 const double prediction_horizon, const double prediction_step,
                                                                                 const double set_speed = std::numeric_limits<double>::quiet_NaN())
   {
@@ -1050,7 +1050,7 @@ namespace balloon_filter
   // --------------------------------------------------------------
 
   /* transform_pcl() method //{ */
-  void BalloonFilter::transform_pcl(pc_XYZt_t::Ptr pcl, const Eigen::Quaternionf& quat, const Eigen::Vector3f trans)
+  void BallFilter::transform_pcl(pc_XYZt_t::Ptr pcl, const Eigen::Quaternionf& quat, const Eigen::Vector3f trans)
   {
     for (auto& pt : pcl->points)
       pt.getVector3fMap() = quat * pt.getVector3fMap() + trans;
@@ -1058,7 +1058,7 @@ namespace balloon_filter
   //}
 
   /* transform_line() method //{ */
-  void BalloonFilter::transform_line(line3d_t& line, const quat_t& quat, const vec3_t& trans)
+  void BallFilter::transform_line(line3d_t& line, const quat_t& quat, const vec3_t& trans)
   {
     line.origin = quat*line.origin + trans;
     line.direction = quat*line.direction;
@@ -1066,7 +1066,7 @@ namespace balloon_filter
   //}
 
   /* sort_pcl() method //{ */
-  void BalloonFilter::sort_pcl(pc_XYZt_t::Ptr pcl)
+  void BallFilter::sort_pcl(pc_XYZt_t::Ptr pcl)
   {
     std::sort(std::begin(pcl->points), std::end(pcl->points),
               // comparison lambda function
@@ -1075,14 +1075,14 @@ namespace balloon_filter
   //}
 
   /* to_eigen() method //{ */
-  pos_t BalloonFilter::to_eigen(const pt_XYZt_t& pt)
+  pos_t BallFilter::to_eigen(const pt_XYZt_t& pt)
   {
     return {pt.x, pt.y, pt.z};
   }
   //}
 
   /* estimate_line_orientation() method //{ */
-  float BalloonFilter::estimate_line_orientation(pc_XYZt_t::Ptr points, const line3d_t& line)
+  float BallFilter::estimate_line_orientation(pc_XYZt_t::Ptr points, const line3d_t& line)
   {
     const vec3_t line_dir = line.direction;
     std::vector<float> orientations;
@@ -1103,7 +1103,7 @@ namespace balloon_filter
   //}
 
   /* constrain_line_to_pts() method //{ */
-  line3d_t BalloonFilter::constrain_line_to_pts(const line3d_t& line, pc_XYZt_t::Ptr points)
+  line3d_t BallFilter::constrain_line_to_pts(const line3d_t& line, pc_XYZt_t::Ptr points)
   {
     std::vector<float> dists;
     dists.reserve(points->size());
@@ -1126,7 +1126,7 @@ namespace balloon_filter
   //}
 
   /* back_up_line() method //{ */
-  geometry_msgs::Pose BalloonFilter::back_up_line(const line3d_t& line, const double amount)
+  geometry_msgs::Pose BallFilter::back_up_line(const line3d_t& line, const double amount)
   {
     geometry_msgs::Pose ret;
   
@@ -1149,7 +1149,7 @@ namespace balloon_filter
   //}
 
   /* reset_line_estimate() method //{ */
-  void BalloonFilter::reset_line_estimate()
+  void BallFilter::reset_line_estimate()
   {
     std::scoped_lock lck(m_linefit_mtx);
     m_linefit_valid = false;
@@ -1163,7 +1163,7 @@ namespace balloon_filter
   // --------------------------------------------------------------
 
   /* get_yz_plane() method //{ */
-  plane_t BalloonFilter::get_yz_plane(const vec4_t& pose)
+  plane_t BallFilter::get_yz_plane(const vec4_t& pose)
   {
     const vec3_t normal(cos(pose.w()), sin(pose.w()), 0.0);
     plane_t ret;
@@ -1175,14 +1175,14 @@ namespace balloon_filter
 
   /* signed_point_plane_distance() method //{ */
   // returns +distance if the point is IN FRONT of the plane, -distance if the point is BEHIND the plane
-  double BalloonFilter::signed_point_plane_distance(const vec3_t& point, const plane_t& plane)
+  double BallFilter::signed_point_plane_distance(const vec3_t& point, const plane_t& plane)
   {
     return (point - plane.point).dot(plane.normal.normalized());
   }
   //}
 
   /* get_uav_cmd_position() method //{ */
-  std::optional<vec4_t> BalloonFilter::get_uav_cmd_position()
+  std::optional<vec4_t> BallFilter::get_uav_cmd_position()
   {
     if (!m_sh_cmd_odom.hasMsg())
       return std::nullopt;
@@ -1192,7 +1192,7 @@ namespace balloon_filter
   //}
 
   /* process_odom() method //{ */
-  std::optional<vec4_t> BalloonFilter::process_odom(const nav_msgs::Odometry& odom)
+  std::optional<vec4_t> BallFilter::process_odom(const nav_msgs::Odometry& odom)
   {
     const auto tf_opt = get_transform_to_world(odom.header.frame_id, odom.header.stamp);
     if (!tf_opt.has_value())
@@ -1208,7 +1208,7 @@ namespace balloon_filter
   //}
 
   /* reset_estimates() method //{ */
-  void BalloonFilter::reset_estimates()
+  void BallFilter::reset_estimates()
   {
     reset_lkf_estimate();
     reset_rheiv_estimate();
@@ -1218,7 +1218,7 @@ namespace balloon_filter
 
   /* get_pos() method //{ */
   template <class T>
-  pos_t BalloonFilter::get_pos(const T& x)
+  pos_t BallFilter::get_pos(const T& x)
   {
     return x.template block<3, 1>(0, 0);
   }
@@ -1226,7 +1226,7 @@ namespace balloon_filter
 
   /* get_pos_cov() method //{ */
   template <class T>
-  pos_cov_t BalloonFilter::get_pos_cov(const T& statecov)
+  pos_cov_t BallFilter::get_pos_cov(const T& statecov)
   {
     pos_cov_t ret;
     ret.pos = get_pos(statecov.x);
@@ -1239,7 +1239,7 @@ namespace balloon_filter
 
   /* line_visualization() //{ */
   
-  visualization_msgs::MarkerArray BalloonFilter::line_visualization(const line3d_t& line, const std_msgs::Header& header, const std::string& text = "")
+  visualization_msgs::MarkerArray BallFilter::line_visualization(const line3d_t& line, const std_msgs::Header& header, const std::string& text = "")
   {
     visualization_msgs::MarkerArray ret;
     Eigen::Vector3d center = line.origin + line.direction/2.0;
@@ -1300,7 +1300,7 @@ namespace balloon_filter
   //}
 
   /* plane_visualization //{ */
-  visualization_msgs::MarkerArray BalloonFilter::plane_visualization(const theta_t& plane_theta, const std_msgs::Header& header)
+  visualization_msgs::MarkerArray BallFilter::plane_visualization(const theta_t& plane_theta, const std_msgs::Header& header)
   {
     visualization_msgs::MarkerArray ret;
   
@@ -1429,10 +1429,10 @@ namespace balloon_filter
   }
   //}
 
-  /* balloon_filter::BallLocation //{ */
-  balloon_filter::BallLocation BalloonFilter::to_output_message(const pos_cov_t& estimate, const std_msgs::Header& header)
+  /* ball_filter::BallLocation //{ */
+  ball_filter::BallLocation BallFilter::to_output_message(const pos_cov_t& estimate, const std_msgs::Header& header)
   {
-    balloon_filter::BallLocation ret;
+    ball_filter::BallLocation ret;
 
     ret.header = header;
     ret.detection.pose.position.x = estimate.pos.x();
@@ -1461,7 +1461,7 @@ namespace balloon_filter
   //}
 
   /* geometry_msgs::PoseWithCovarianceStamped //{ */
-  geometry_msgs::PoseWithCovarianceStamped BalloonFilter::to_output_message2(const pos_cov_t& estimate, const std_msgs::Header& header)
+  geometry_msgs::PoseWithCovarianceStamped BallFilter::to_output_message2(const pos_cov_t& estimate, const std_msgs::Header& header)
   {
     geometry_msgs::PoseWithCovarianceStamped ret;
 
@@ -1492,7 +1492,7 @@ namespace balloon_filter
   //}
 
   /* geometry_msgs::PoseStamped //{ */
-  geometry_msgs::PoseStamped BalloonFilter::to_output_message2(const theta_t& plane_theta, const std_msgs::Header& header)
+  geometry_msgs::PoseStamped BallFilter::to_output_message2(const theta_t& plane_theta, const std_msgs::Header& header)
   {
     geometry_msgs::PoseStamped ret;
 
@@ -1515,7 +1515,7 @@ namespace balloon_filter
   //}
 
   /* nav_msgs::Path //{ */
-  nav_msgs::Path BalloonFilter::to_output_message(const std::vector<std::pair<LKF::x_t, ros::Time>>& predictions, const std_msgs::Header& header)
+  nav_msgs::Path BallFilter::to_output_message(const std::vector<std::pair<LKF::x_t, ros::Time>>& predictions, const std_msgs::Header& header)
   {
     nav_msgs::Path ret;
     ret.header = header;
@@ -1545,7 +1545,7 @@ namespace balloon_filter
   //}
 
   /* sensor_msgs::PointCloud2 //{ */
-  sensor_msgs::PointCloud2 BalloonFilter::to_output_message(const boost::circular_buffer<pos_t>& points, const std_msgs::Header& header)
+  sensor_msgs::PointCloud2 BallFilter::to_output_message(const boost::circular_buffer<pos_t>& points, const std_msgs::Header& header)
   {
     const size_t n_pts = points.size();
     sensor_msgs::PointCloud2 ret;
@@ -1577,10 +1577,10 @@ namespace balloon_filter
   }
   //}
 
-  /* balloon_filter::Plane //{ */
-  balloon_filter::Plane BalloonFilter::to_output_message(const theta_t& plane_theta)
+  /* ball_filter::Plane //{ */
+  ball_filter::Plane BallFilter::to_output_message(const theta_t& plane_theta)
   {
-    balloon_filter::Plane ret;
+    ball_filter::Plane ret;
     const auto norm = plane_theta.block<3, 1>(0, 0).norm();
     const auto normal = plane_theta.block<3, 1>(0, 0) / norm;
     ret.normal.x = normal.x();
@@ -1591,20 +1591,20 @@ namespace balloon_filter
   }
   //}
 
-  /* balloon_filter::PlaneStamped //{ */
-  balloon_filter::PlaneStamped BalloonFilter::to_output_message(const theta_t& plane_theta, const std_msgs::Header& header)
+  /* ball_filter::PlaneStamped //{ */
+  ball_filter::PlaneStamped BallFilter::to_output_message(const theta_t& plane_theta, const std_msgs::Header& header)
   {
-    balloon_filter::PlaneStamped ret;
+    ball_filter::PlaneStamped ret;
     ret.header = header;
     ret.plane = to_output_message(plane_theta);
     return ret;
   }
   //}
 
-  /* balloon_filter::LKFState //{ */
-  balloon_filter::LKFState BalloonFilter::to_output_message(const LKF::statecov_t& lkf_statecov)
+  /* ball_filter::LKFState //{ */
+  ball_filter::LKFState BallFilter::to_output_message(const LKF::statecov_t& lkf_statecov)
   {
-    balloon_filter::LKFState ret;
+    ball_filter::LKFState ret;
     ret.position.x = lkf_statecov.x(lkf::x::x);
     ret.position.y = lkf_statecov.x(lkf::x::y);
     ret.position.z = lkf_statecov.x(lkf::x::z);
@@ -1618,7 +1618,7 @@ namespace balloon_filter
   //}
 
   /* get_cur_mav_pos() method //{ */
-  pos_t BalloonFilter::get_cur_mav_pos()
+  pos_t BallFilter::get_cur_mav_pos()
   {
     const auto tf_opt = get_transform_to_world(m_uav_frame_id, ros::Time::now());
     if (!tf_opt.has_value())
@@ -1628,7 +1628,7 @@ namespace balloon_filter
   //}
 
   /* msg2cov() method //{ */
-  cov_t BalloonFilter::msg2cov(const ros_cov_t& msg_cov, int offset)
+  cov_t BallFilter::msg2cov(const ros_cov_t& msg_cov, int offset)
   {
     cov_t cov;
     for (int r = 0; r < 3; r++)
@@ -1643,14 +1643,14 @@ namespace balloon_filter
   //}
 
   /* rotate_covariance() method //{ */
-  cov_t BalloonFilter::rotate_covariance(const cov_t& covariance, const cov_t& rotation)
+  cov_t BallFilter::rotate_covariance(const cov_t& covariance, const cov_t& rotation)
   {
     return rotation * covariance * rotation.transpose();  // rotate the covariance to point in direction of est. position
   }
   //}
 
   /* point_valid() method //{ */
-  bool BalloonFilter::point_valid(const pos_t& pt)
+  bool BallFilter::point_valid(const pos_t& pt)
   {
     const bool height_valid = pt.z() > m_bounds_z_min && pt.z() < m_bounds_z_max;
     const bool sane_values = !pt.array().isNaN().any() && !pt.array().isInf().any();
@@ -1660,7 +1660,7 @@ namespace balloon_filter
   //}
 
   /* plane_orientation() method //{ */
-  quat_t BalloonFilter::plane_orientation(const theta_t& plane_theta)
+  quat_t BallFilter::plane_orientation(const theta_t& plane_theta)
   {
     const quat_t ret = quat_t::FromTwoVectors(pos_t::UnitZ(), plane_theta.block<3, 1>(0, 0));
     return ret;
@@ -1668,7 +1668,7 @@ namespace balloon_filter
   //}
 
   /* plane_angle() method //{ */
-  double BalloonFilter::plane_angle(const theta_t& plane1, const theta_t& plane2)
+  double BallFilter::plane_angle(const theta_t& plane1, const theta_t& plane2)
   {
     const auto normal1 = plane1.block<3, 1>(0, 0).normalized();
     const auto normal2 = plane2.block<3, 1>(0, 0).normalized();
@@ -1677,7 +1677,7 @@ namespace balloon_filter
   //}
 
   /* plane_origin() method //{ */
-  pos_t BalloonFilter::plane_origin(const theta_t& plane_theta, const pos_t& origin)
+  pos_t BallFilter::plane_origin(const theta_t& plane_theta, const pos_t& origin)
   {
     const static double eps = 1e-9;
     const double a = plane_theta(0);
@@ -1699,14 +1699,14 @@ namespace balloon_filter
   //}
 
   /* ball_speed_at_time() method //{ */
-  double BalloonFilter::ball_speed_at_time([[maybe_unused]] const ros::Time& timestamp)
+  double BallFilter::ball_speed_at_time([[maybe_unused]] const ros::Time& timestamp)
   {
     return m_ball_speed;
   }
   //}
 
   /* load_dynparams() method //{ */
-  void BalloonFilter::load_dynparams(drcfg_t cfg)
+  void BallFilter::load_dynparams(drcfg_t cfg)
   {
     m_bounds_z_min = cfg.bounds__z__min;
     m_bounds_z_max = cfg.bounds__z__max;
@@ -1741,7 +1741,7 @@ namespace balloon_filter
 
   /* onInit() //{ */
 
-  void BalloonFilter::onInit()
+  void BallFilter::onInit()
   {
 
     ROS_INFO("[%s]: Initializing", m_node_name.c_str());
@@ -1820,7 +1820,7 @@ namespace balloon_filter
       for (auto& matrix : m_safety_area_polygon_obstacle_points)
         matrix.transposeInPlace();
 
-      m_safety_area_init_timer = nh.createTimer(ros::Duration(1.0), &BalloonFilter::init_safety_area, this);
+      m_safety_area_init_timer = nh.createTimer(ros::Duration(1.0), &BallFilter::init_safety_area, this);
     } else
     {
       m_safety_area_initialized = true;
@@ -1864,7 +1864,7 @@ namespace balloon_filter
     mrs_lib::construct_object(m_sh_localized, shopts, "localized_ball");
     mrs_lib::construct_object(m_sh_cmd_odom, shopts, "cmd_odom");
 
-    m_reset_estimates_server = nh.advertiseService("reset_estimates", &BalloonFilter::reset_estimates_callback, this);
+    m_reset_estimates_server = nh.advertiseService("reset_estimates", &BallFilter::reset_estimates_callback, this);
     //}
 
     /* publishers //{ */
@@ -1874,7 +1874,7 @@ namespace balloon_filter
 
     m_pub_line_endpose = nh.advertise<geometry_msgs::PoseStamped>("line_endpose", 1);
     
-    m_pub_chosen_meas = nh.advertise<balloon_filter::BallLocation>("chosen_measurement", 1);
+    m_pub_chosen_meas = nh.advertise<ball_filter::BallLocation>("chosen_measurement", 1);
     m_pub_chosen_meas_dbg = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("chosen_measurement_dbg", 1);
 
     m_pub_line1 = nh.advertise<visualization_msgs::MarkerArray>("fitted_line1_marker", 1);
@@ -1885,9 +1885,9 @@ namespace balloon_filter
     m_pub_plane_dbg = nh.advertise<visualization_msgs::MarkerArray>("fitted_plane_marker", 1);
     m_pub_plane_dbg2 = nh.advertise<geometry_msgs::PoseStamped>("fitted_plane_pose", 1);
     m_pub_used_pts = nh.advertise<sensor_msgs::PointCloud2>("fit_points", 1);
-    m_pub_fitted_plane = nh.advertise<balloon_filter::PlaneStamped>("fitted_plane", 1);
+    m_pub_fitted_plane = nh.advertise<ball_filter::PlaneStamped>("fitted_plane", 1);
 
-    m_pub_prediction = nh.advertise<balloon_filter::BallPrediction>("prediction", 1);
+    m_pub_prediction = nh.advertise<ball_filter::BallPrediction>("prediction", 1);
     m_pub_pred_path_dbg = nh.advertise<nav_msgs::Path>("predicted_path", 1);
 
     m_pub_gt_ball_speed = nh.advertise<std_msgs::Float64>("gt_ball_speed", 1);
@@ -1951,10 +1951,10 @@ namespace balloon_filter
 
     /* timers  //{ */
 
-    m_main_loop_timer = nh.createTimer(ros::Duration(processing_period), &BalloonFilter::main_loop, this);
-    m_rheiv_loop_timer = nh.createTimer(ros::Duration(m_rheiv_fitting_period), &BalloonFilter::rheiv_loop, this);
-    m_linefit_loop_timer = nh.createTimer(ros::Duration(m_linefit_fitting_period), &BalloonFilter::linefit_loop, this);
-    m_prediction_loop_timer = nh.createTimer(ros::Duration(prediction_period), &BalloonFilter::prediction_loop, this);
+    m_main_loop_timer = nh.createTimer(ros::Duration(processing_period), &BallFilter::main_loop, this);
+    m_rheiv_loop_timer = nh.createTimer(ros::Duration(m_rheiv_fitting_period), &BallFilter::rheiv_loop, this);
+    m_linefit_loop_timer = nh.createTimer(ros::Duration(m_linefit_fitting_period), &BallFilter::linefit_loop, this);
+    m_prediction_loop_timer = nh.createTimer(ros::Duration(prediction_period), &BallFilter::prediction_loop, this);
 
     //}
 
@@ -1963,9 +1963,9 @@ namespace balloon_filter
 
   //}
 
-  /* BalloonFilter::reset_estimates_callback() method //{ */
+  /* BallFilter::reset_estimates_callback() method //{ */
 
-  bool BalloonFilter::reset_estimates_callback([[maybe_unused]] std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& resp)
+  bool BallFilter::reset_estimates_callback([[maybe_unused]] std_srvs::Trigger::Request& req, std_srvs::Trigger::Response& resp)
   {
     reset_estimates();
     resp.message = "Current estimates were reset.";
@@ -1975,7 +1975,7 @@ namespace balloon_filter
 
   //}
 
-}  // namespace balloon_filter
+}  // namespace ball_filter
 
 #include <pluginlib/class_list_macros.h>
-PLUGINLIB_EXPORT_CLASS(balloon_filter::BalloonFilter, nodelet::Nodelet)
+PLUGINLIB_EXPORT_CLASS(ball_filter::BallFilter, nodelet::Nodelet)

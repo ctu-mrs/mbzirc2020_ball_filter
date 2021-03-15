@@ -41,12 +41,12 @@
  <!-- - - - - - - - - - - - - - - -->
  <customMathEquations>
   <snippet name="curvature filtered">
-   <linkedPlot>/uav1/balloon_filter/low_pass_filtered/value</linkedPlot>
+   <linkedPlot>/uav1/ball_filter/low_pass_filtered/value</linkedPlot>
    <global></global>
    <equation>return value*2</equation>
   </snippet>
   <snippet name="curvature">
-   <linkedPlot>/uav1/balloon_filter/ball_prediction/filter_state/ukf_state/curvature</linkedPlot>
+   <linkedPlot>/uav1/ball_filter/ball_prediction/filter_state/ukf_state/curvature</linkedPlot>
    <global></global>
    <equation>return value*2</equation>
   </snippet>

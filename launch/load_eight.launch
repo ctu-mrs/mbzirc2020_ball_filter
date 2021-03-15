@@ -13,9 +13,9 @@
 	
 		<node name="trajectory_loader" pkg="trajectory_loader" type="load_trajectory" args="--load" output="screen" launch-prefix="$(arg launch_prefix)" >
     
-      <rosparam file="$(find balloon_filter)/config/trajectory_loader.yaml" />
+      <rosparam file="$(find ball_filter)/config/trajectory_loader.yaml" />
 
-			<param name="current_working_directory" type="string" value="$(find balloon_filter)" />	
+			<param name="current_working_directory" type="string" value="$(find ball_filter)" />	
 			<param name="service_topic" type="string" value="control_manager/trajectory_reference" />	
       
       <param name="dt" type="double" value="0.2" />

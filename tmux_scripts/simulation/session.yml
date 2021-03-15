@@ -11,8 +11,8 @@ windows:
   - gazebo:
       layout: even-vertical
       panes:
-        - waitForRos; roslaunch balloon_simulation simulation.launch gui:=false
-        - waitForRos; roslaunch balloon_attacher attacher.launch
+        - waitForRos; roslaunch ball_simulation simulation.launch gui:=false
+        - waitForRos; roslaunch ball_attacher attacher.launch
   - spawn:
       layout: even-vertical
       panes:
@@ -53,7 +53,7 @@ windows:
       panes:
         - '
           waitForControl;
-          roslaunch balloon_filter generate_eight.launch;
+          roslaunch ball_filter generate_eight.launch;
           roslaunch trajectory_loader multimaster_trajectories_loader.launch loop:=true;
           history -s roslaunch trajectory_loader multimaster_start_following.launch;
           '
@@ -64,4 +64,4 @@ windows:
   - filter:
       layout: even-vertical
       panes:
-        - waitForControl; history -s roslaunch balloon_filter filter_eightball.launch
+        - waitForControl; history -s roslaunch ball_filter filter_eightball.launch

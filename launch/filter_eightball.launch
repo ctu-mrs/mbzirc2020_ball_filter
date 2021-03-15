@@ -19,23 +19,23 @@
   <arg if="$(eval arg('WORLD_FILE') != '')" name="world_file" value="$(arg WORLD_FILE)" />
 
   <arg name="standalone" default="true" />
-  <arg name="manager" default="balloon_filter" />
-  <arg name="nodelet_name" value="balloon_filter/BalloonFilter" />
+  <arg name="manager" default="ball_filter" />
+  <arg name="nodelet_name" value="ball_filter/BallFilter" />
   <arg unless="$(arg standalone)" name="nodelet_load" value="load $(arg nodelet_name) $(arg manager)"/>
   <arg     if="$(arg standalone)" name="nodelet_load" value="standalone $(arg nodelet_name)"/>
 
   <group if="$(arg print_debug)">
-    <env name="ROSCONSOLE_CONFIG_FILE" value="$(find balloon_filter)/config/rosconsole/debug.conf"/>
+    <env name="ROSCONSOLE_CONFIG_FILE" value="$(find ball_filter)/config/rosconsole/debug.conf"/>
   </group>
 
   <group ns="$(arg uav_name)">
 
-    <node pkg="nodelet" type="nodelet" name="balloon_filter" args="$(arg nodelet_load)" output="screen" launch-prefix="$(arg launch_prefix)" respawn="$(arg respawn)" >
+    <node pkg="nodelet" type="nodelet" name="ball_filter" args="$(arg nodelet_load)" output="screen" launch-prefix="$(arg launch_prefix)" respawn="$(arg respawn)" >
 
       <param name="uav_name" type="string" value="$(arg uav_name)" />
       <param name="uav_frame_id" type="string" value="$(arg uav_name)/fcu" />
       <param name="world_frame_id" type="string" value="$(arg uav_name)/gps_origin" />
-      <rosparam file="$(find balloon_filter)/config/filter_params.yaml" command="load" />
+      <rosparam file="$(find ball_filter)/config/filter_params.yaml" command="load" />
       <rosparam file="$(arg world_file)" command="load" />
 
       <!-- Subscribers -->
