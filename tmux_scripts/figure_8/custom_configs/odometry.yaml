@@ -1,9 +1,0 @@
-altitude:
-
-  # Covariances of measurements
-  Q:
-    height_range: [10000] # 0.04 stddev in simulation
-
-garminFilterBufferSize: 200
-garminFilterMaxValidAltitude: 40.0
-garminFilterMaxDifference: 2.0

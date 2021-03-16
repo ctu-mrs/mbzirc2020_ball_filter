@@ -2,6 +2,7 @@
 
 import rospy
 import sys
+import os
 import numpy as np
 from matplotlib import pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -75,6 +76,9 @@ def ypr_to_quaternion(yaw, pitch, roll):
         return [qw, qx, qy, qz]
 
 def save_data(data, ofname, col_names=None):
+    folder = os.path.dirname(os.path.realpath(ofname))
+    if not os.path.exists(folder):
+        os.makedirs(folder)
     with open(ofname, 'w') as of:
         if col_names is not None:
             txt = ",".join(col_names)

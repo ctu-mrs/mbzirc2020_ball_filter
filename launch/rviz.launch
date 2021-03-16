@@ -1,0 +1,11 @@
+<launch>
+
+  <arg name="name" default="default_simulation" />
+
+  <group>
+
+    <node pkg="rviz" type="rviz" name="rviz" args="-d $(find ball_filter)/rviz/rviz.rviz" />
+
+  </group>
+
+</launch>
